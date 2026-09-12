@@ -1,0 +1,9 @@
+{
+  "projects": {
+    // TODO(user): replace with the real Firebase project id, created in the
+    // Firebase console (https://console.firebase.google.com/). No project
+    // exists yet as of this task; this placeholder is never used by
+    // `test:emulator`, which always passes --project demo-health-tracker.
+    "default": "ecztrack-1ed91"
+  }
+}

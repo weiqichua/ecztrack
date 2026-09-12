@@ -1,0 +1,624 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  mergeSnapshots, mergeSymptomLogs, emptySnapshot, isEmptyLedger, pushSnapshot, pullSnapshot,
+  isOutdatedSnapshot, isFutureSnapshot, isEmptySnapshot,
+  OUTDATED_BACKUP_MESSAGE, NEWER_BACKUP_MESSAGE, SNAPSHOT_SCHEMA_VERSION, type Snapshot,
+} from "./backup";
+import type { HabitDefinition, PhaseLedger } from "@/constants/types";
+import { EMPTY_LEDGER, scheduleElimination, startChallenge, endEliminationEarly } from "./phases";
+import { EMPTY_TAGS, type FoodItem } from "@/constants/foods";
+import type { CatalogItem } from "@/constants/catalog";
+
+const empty = (): Snapshot => ({
+  consumptionLogs: [], supplementLogs: [], activityLogs: [], symptomLogs: [], scratchLogs: [],
+  customFoods: [], habitDefinitions: [], habitLogs: [],
+  bodyLocations: [], cues: [], routines: [], symptoms: [],
+  foodCategories: [], foodTags: [], supplements: [], activities: [], presetGroups: [],
+  ledger: null,
+});
+
+/**
+ * A ledger holding one elimination span. The id is derived from `start` rather
+ * than a counter, so two calls with the same date — one to build a fixture,
+ * one to build the expected value in an assertion — produce equal ledgers.
+ */
+const ledgerFrom = (start: string, days = 14): PhaseLedger =>
+  // The `todayKey` argument only gates "is a phase already open"; building from
+  // EMPTY_LEDGER there is nothing to collide with, so any date does.
+  scheduleElimination(EMPTY_LEDGER, start, days, start, "dairy", () => `e_${start}`);
+
+/** Every catalog gets identical treatment, so every test runs over all of them. */
+const CATALOGS = [
+  "bodyLocations", "cues", "routines", "symptoms", "foodCategories", "foodTags",
+] as const;
+
+const cat = (id: string, name: string, over: Partial<CatalogItem> = {}): CatalogItem =>
+  ({ id, name, order: 0, isArchived: false, ...over });
+
+const cLog = (id: string, timestamp = "2026-08-17T10:00:00.000Z") =>
+  ({ id, timestamp, item_id: "APPLE", phase: "none", is_accident: false }) as any;
+const sLog = (date: string, itch: number | null = 3) =>
+  ({ id: date, date, scores: { itch } }) as any;
+const hDef = (id: string, name: string, updated_at: string) =>
+  ({ id, name, icon: "star", unit: "check", order: 0, isArchived: false, updated_at }) as any;
+const hLog = (habitId: string, date: string, value: number) =>
+  ({ id: `${habitId}_${date}`, habitId, date, value }) as any;
+
+describe("mergeSnapshots", () => {
+  it("returns local unchanged when remote is empty", () => {
+    const local = { ...empty(), consumptionLogs: [cLog("a")] };
+    expect(mergeSnapshots(local, empty()).consumptionLogs).toHaveLength(1);
+  });
+
+  it("returns remote content when local is empty", () => {
+    const remote = { ...empty(), consumptionLogs: [cLog("a")] };
+    expect(mergeSnapshots(empty(), remote).consumptionLogs).toHaveLength(1);
+  });
+
+  it("unions append-only logs by id without duplicating", () => {
+    const local = { ...empty(), consumptionLogs: [cLog("a"), cLog("b")] };
+    const remote = { ...empty(), consumptionLogs: [cLog("b"), cLog("c")] };
+    const ids = mergeSnapshots(local, remote).consumptionLogs.map(l => l.id).sort();
+    expect(ids).toEqual(["a", "b", "c"]);
+  });
+
+  it("never drops a local entry that is absent remotely", () => {
+    // Backup must not be able to delete local data.
+    const local = { ...empty(), consumptionLogs: [cLog("only-local")] };
+    const remote = { ...empty(), consumptionLogs: [cLog("only-remote")] };
+    const ids = mergeSnapshots(local, remote).consumptionLogs.map(l => l.id);
+    expect(ids).toContain("only-local");
+    expect(ids).toContain("only-remote");
+  });
+
+  it("keeps one symptom log per day, preferring local", () => {
+    const local = { ...empty(), symptomLogs: [sLog("2026-08-17", 5)] };
+    const remote = { ...empty(), symptomLogs: [sLog("2026-08-17", 1)] };
+    const merged = mergeSnapshots(local, remote).symptomLogs;
+    expect(merged).toHaveLength(1);
+    expect(merged[0].scores.itch).toBe(5);
+  });
+
+  it("keeps both symptom logs when the date differs", () => {
+    const local = { ...empty(), symptomLogs: [sLog("2026-08-17")] };
+    const remote = { ...empty(), symptomLogs: [sLog("2026-08-18")] };
+    expect(mergeSnapshots(local, remote).symptomLogs).toHaveLength(2);
+  });
+
+  it("keys the symptom union by date, not by the generated id", () => {
+    // The same check-in saved on two devices has two different ids. Keying by
+    // id leaves two records for one day, and index.tsx, upsertSymptomLog and
+    // calendar.tsx each pick a different one of them.
+    const local = { ...empty(), symptomLogs: [{ id: "phone", date: "2026-08-17", scores: { itch: 3 } }] as any };
+    const remote = { ...empty(), symptomLogs: [{ id: "tablet", date: "2026-08-17", scores: { itch: 2 } }] as any };
+    const merged = mergeSnapshots(local, remote).symptomLogs;
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("phone");
+  });
+
+  it("keeps one habit log per (habitId, date), preferring local", () => {
+    const local = { ...empty(), habitLogs: [hLog("h1", "2026-08-17", 4)] };
+    const remote = { ...empty(), habitLogs: [hLog("h1", "2026-08-17", 9)] };
+    const merged = mergeSnapshots(local, remote).habitLogs;
+    expect(merged).toHaveLength(1);
+    expect(merged[0].value).toBe(4);
+  });
+
+  it("resolves habit definitions by updated_at, newest wins", () => {
+    const local = { ...empty(), habitDefinitions: [hDef("h1", "Old name", "2026-08-01T00:00:00.000Z")] };
+    const remote = { ...empty(), habitDefinitions: [hDef("h1", "New name", "2026-08-17T00:00:00.000Z")] };
+    const merged = mergeSnapshots(local, remote).habitDefinitions;
+    expect(merged).toHaveLength(1);
+    expect(merged[0].name).toBe("New name");
+  });
+
+  it("prefers local for a habit definition with no timestamps", () => {
+    const a = { ...hDef("h1", "Local", ""), updated_at: undefined };
+    const b = { ...hDef("h1", "Remote", ""), updated_at: undefined };
+    const merged = mergeSnapshots({ ...empty(), habitDefinitions: [a] }, { ...empty(), habitDefinitions: [b] });
+    expect(merged.habitDefinitions[0].name).toBe("Local");
+  });
+
+  it("reindexes habit definition order contiguously from zero", () => {
+    const local = { ...empty(), habitDefinitions: [{ ...hDef("h1", "A", "2026-08-01T00:00:00.000Z"), order: 5 }] };
+    const remote = { ...empty(), habitDefinitions: [{ ...hDef("h2", "B", "2026-08-01T00:00:00.000Z"), order: 9 }] };
+    expect(mergeSnapshots(local, remote).habitDefinitions.map(d => d.order)).toEqual([0, 1]);
+  });
+
+  it("keeps the local ledger when both exist", () => {
+    const local = ledgerFrom("2026-08-01");
+    const merged = mergeSnapshots({ ...empty(), ledger: local }, { ...empty(), ledger: ledgerFrom("2026-01-01") });
+    expect(merged.ledger).toEqual(local);
+  });
+
+  it("adopts the remote ledger when local has none", () => {
+    const remote = ledgerFrom("2026-08-01");
+    expect(mergeSnapshots(empty(), { ...empty(), ledger: remote }).ledger).toEqual(remote);
+  });
+
+  it("keeps every custom food from both sides, one record per id", () => {
+    const f = (id: string) => ({ id, name: id, category: "Other", is_custom: true }) as any;
+    const merged = mergeSnapshots(
+      { ...empty(), customFoods: [f("custom_1")] },
+      { ...empty(), customFoods: [f("custom_1"), f("custom_2")] },
+    );
+    expect(merged.customFoods.map(x => x.id).sort()).toEqual(["custom_1", "custom_2"]);
+  });
+
+  for (const key of CATALOGS) {
+    it(`never drops a local ${key} entry that is absent remotely`, () => {
+      const local = { ...empty(), [key]: [cat("only-local", "Local")] };
+      const remote = { ...empty(), [key]: [cat("only-remote", "Remote")] };
+      const ids = mergeSnapshots(local, remote)[key].map(i => i.id).sort();
+      expect(ids).toEqual(["only-local", "only-remote"]);
+    });
+
+    it(`resolves ${key} by updated_at, newest wins`, () => {
+      const local = { ...empty(), [key]: [cat("i1", "Old name", { updated_at: "2026-08-01T00:00:00.000Z" })] };
+      const remote = { ...empty(), [key]: [cat("i1", "New name", { updated_at: "2026-08-17T00:00:00.000Z" })] };
+      const merged = mergeSnapshots(local, remote)[key];
+      expect(merged).toHaveLength(1);
+      expect(merged[0].name).toBe("New name");
+    });
+
+    it(`prefers the local ${key} entry when only the remote is stamped`, () => {
+      const local = { ...empty(), [key]: [cat("i1", "Local")] };
+      const remote = { ...empty(), [key]: [cat("i1", "Stale remote", { updated_at: "2020-01-01T00:00:00.000Z" })] };
+      expect(mergeSnapshots(local, remote)[key][0].name).toBe("Local");
+    });
+
+    it(`reindexes ${key} order contiguously from zero`, () => {
+      const local = { ...empty(), [key]: [cat("i1", "A", { order: 5 })] };
+      const remote = { ...empty(), [key]: [cat("i2", "B", { order: 9 })] };
+      expect(mergeSnapshots(local, remote)[key].map(i => i.order)).toEqual([0, 1]);
+    });
+
+    it(`keeps an archived ${key} entry archived when the remote copy is older`, () => {
+      // An un-archive here returns a retired item to every picker.
+      const local = { ...empty(), [key]: [cat("i1", "Retired", { isArchived: true, updated_at: "2026-08-17T00:00:00.000Z" })] };
+      const remote = { ...empty(), [key]: [cat("i1", "Retired", { updated_at: "2026-08-01T00:00:00.000Z" })] };
+      expect(mergeSnapshots(local, remote)[key][0].isArchived).toBe(true);
+    });
+  }
+
+  it("keeps a routine description through the merge", () => {
+    const local = { ...empty(), routines: [{ ...cat("r1", "Cold pack"), description: "Hold for a minute" }] };
+    expect(mergeSnapshots(local, empty()).routines[0].description).toBe("Hold for a minute");
+  });
+
+  it("keeps an archived custom food archived when the remote copy is older", () => {
+    const food = (over: Partial<FoodItem>): FoodItem =>
+      ({ id: "f1", name: "Ramen", category: "Other", tags: EMPTY_TAGS, is_elimination_safe: false, ...over });
+    const local = { ...empty(), customFoods: [food({ isArchived: true, updated_at: "2026-08-17T00:00:00.000Z" })] };
+    const remote = { ...empty(), customFoods: [food({ updated_at: "2026-08-01T00:00:00.000Z" })] };
+    expect(mergeSnapshots(local, remote).customFoods[0].isArchived).toBe(true);
+  });
+
+  it("is idempotent — merging the same remote twice changes nothing", () => {
+    const local = {
+      ...empty(), consumptionLogs: [cLog("a")], symptomLogs: [sLog("2026-08-17")],
+      bodyLocations: [cat("l1", "Elbow")], cues: [cat("c1", "Stress")],
+      routines: [cat("r1", "Cold pack")], symptoms: [cat("s1", "Itch")],
+    };
+    const remote = {
+      ...empty(), consumptionLogs: [cLog("b")], symptomLogs: [sLog("2026-08-18")],
+      bodyLocations: [cat("l2", "Knee", { order: 1 })], cues: [cat("c2", "Heat", { order: 1 })],
+      routines: [cat("r2", "Breathe", { order: 1 })], symptoms: [cat("s2", "Redness", { order: 1 })],
+    };
+    const once = mergeSnapshots(local, remote);
+    const twice = mergeSnapshots(once, remote);
+    expect(twice).toEqual(once);
+  });
+});
+
+/**
+ * Restore must not replace fresh local data with stale remote data. It is
+ * union-only with local winning, so logs are safe by construction — these are
+ * the two collections that resolve by a rule instead.
+ */
+describe("mergeSnapshots — stale-remote protection", () => {
+  const def = (over: Partial<HabitDefinition> = {}): HabitDefinition =>
+    ({ id: "h1", name: "Local name", icon: "water", unit: "check", order: 0, isArchived: false, ...over });
+
+  it("keeps the local habit definition when only the remote has a timestamp", () => {
+    // Regression: comparing `(r.updated_at ?? "") > (l.updated_at ?? "")` made ""
+    // sort before every real timestamp, so a local definition predating the
+    // field lost to ANY remote copy — including an older edit.
+    const local = { ...emptySnapshot(), habitDefinitions: [def({ name: "Local name" })] };
+    const remote = { ...emptySnapshot(), habitDefinitions: [def({ name: "Stale remote", updated_at: "2020-01-01T00:00:00.000Z" })] };
+    expect(mergeSnapshots(local, remote).habitDefinitions[0].name).toBe("Local name");
+  });
+
+  it("keeps the local habit definition when neither has a timestamp", () => {
+    const local = { ...emptySnapshot(), habitDefinitions: [def({ name: "Local name" })] };
+    const remote = { ...emptySnapshot(), habitDefinitions: [def({ name: "Stale remote" })] };
+    expect(mergeSnapshots(local, remote).habitDefinitions[0].name).toBe("Local name");
+  });
+
+  it("still adopts a genuinely newer remote definition", () => {
+    const local = { ...emptySnapshot(), habitDefinitions: [def({ name: "Older", updated_at: "2026-01-01T00:00:00.000Z" })] };
+    const remote = { ...emptySnapshot(), habitDefinitions: [def({ name: "Newer", updated_at: "2026-06-01T00:00:00.000Z" })] };
+    expect(mergeSnapshots(local, remote).habitDefinitions[0].name).toBe("Newer");
+  });
+
+  const food = (over: Partial<FoodItem> = {}): FoodItem =>
+    ({ id: "custom_1", name: "Local name", category: "Other", tags: EMPTY_TAGS, is_elimination_safe: false, is_custom: true, ...over });
+
+  it("adopts a genuinely newer remote custom food", () => {
+    const local = { ...emptySnapshot(), customFoods: [food({ name: "Older", updated_at: "2026-01-01T00:00:00.000Z" })] };
+    const remote = { ...emptySnapshot(), customFoods: [food({ name: "Newer", updated_at: "2026-06-01T00:00:00.000Z" })] };
+    expect(mergeSnapshots(local, remote).customFoods[0].name).toBe("Newer");
+  });
+
+  it("keeps the local custom food when the remote copy is older", () => {
+    const local = { ...emptySnapshot(), customFoods: [food({ name: "Newer", updated_at: "2026-06-01T00:00:00.000Z" })] };
+    const remote = { ...emptySnapshot(), customFoods: [food({ name: "Older", updated_at: "2026-01-01T00:00:00.000Z" })] };
+    expect(mergeSnapshots(local, remote).customFoods[0].name).toBe("Newer");
+  });
+
+  it("keeps the local custom food when only the remote has a timestamp", () => {
+    const local = { ...emptySnapshot(), customFoods: [food({ name: "Local name" })] };
+    const remote = { ...emptySnapshot(), customFoods: [food({ name: "Stale remote", updated_at: "2020-01-01T00:00:00.000Z" })] };
+    expect(mergeSnapshots(local, remote).customFoods[0].name).toBe("Local name");
+  });
+
+  it("keeps the local custom food when neither has a timestamp", () => {
+    const local = { ...emptySnapshot(), customFoods: [food({ name: "Local name" })] };
+    const remote = { ...emptySnapshot(), customFoods: [food({ name: "Stale remote" })] };
+    expect(mergeSnapshots(local, remote).customFoods[0].name).toBe("Local name");
+  });
+
+  it("keeps a local ledger that holds a real phase", () => {
+    const real = ledgerFrom("2026-08-01");
+    const stale = ledgerFrom("2020-01-01");
+    const merged = mergeSnapshots({ ...emptySnapshot(), ledger: real }, { ...emptySnapshot(), ledger: stale });
+    expect(merged.ledger).toEqual(real);
+  });
+
+  it("adopts the remote ledger on a device whose own ledger holds nothing", () => {
+    // Regression, carried over from the config this replaces: `local ?? remote`
+    // never reached the remote branch, because AppContext initialises the field
+    // to a default rather than leaving it null. A new phone restored its logs
+    // and kept a blank phase. The emptiness predicate is the test, never a null
+    // check — a device that has merely opened the app has a ledger object
+    // (`EMPTY_LEDGER`, truthy) rather than an actual null.
+    const untouched: PhaseLedger = EMPTY_LEDGER;
+    const remote = ledgerFrom("2026-08-01");
+    const merged = mergeSnapshots({ ...emptySnapshot(), ledger: untouched }, { ...emptySnapshot(), ledger: remote });
+    expect(merged.ledger).toEqual(remote);
+  });
+});
+
+describe("mergeSymptomLogs", () => {
+  const log = (date: string, scores: Record<string, number | null>, id = date) =>
+    ({ id, date, scores }) as any;
+
+  it("keeps a date only one side holds, untouched", () => {
+    const only = log("2026-08-20", { itch: 4 });
+    expect(mergeSymptomLogs([only], [])).toEqual([only]);
+    expect(mergeSymptomLogs([], [only])).toEqual([only]);
+  });
+
+  it("keeps both sides' symptoms when the two devices scored different ones", () => {
+    // The main win: each device only ever offered the symptoms its catalog
+    // held, so the two maps are usually disjoint rather than in conflict.
+    const merged = mergeSymptomLogs(
+      [log("2026-08-20", { itch: 4 })],
+      [log("2026-08-20", { sleep: 2 })],
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].scores).toEqual({ itch: 4, sleep: 2 });
+  });
+
+  it("keeps a remote number over a locally cleared box", () => {
+    // Tapping a box on and off again persists an explicit null. A merge must
+    // not let that null delete the score the other device recorded.
+    const merged = mergeSymptomLogs(
+      [log("2026-08-20", { itch: null })],
+      [log("2026-08-20", { itch: 4 })],
+    );
+    expect(merged[0].scores.itch).toBe(4);
+  });
+
+  it("keeps a local number over a remotely cleared box", () => {
+    const merged = mergeSymptomLogs(
+      [log("2026-08-20", { itch: 4 })],
+      [log("2026-08-20", { itch: null })],
+    );
+    expect(merged[0].scores.itch).toBe(4);
+  });
+
+  it("prefers local when both sides hold a different non-null score", () => {
+    // No updated_at to decide it with, so this matches the rest of the file.
+    const merged = mergeSymptomLogs(
+      [log("2026-08-20", { itch: 5 })],
+      [log("2026-08-20", { itch: 1 })],
+    );
+    expect(merged[0].scores.itch).toBe(5);
+  });
+
+  it("keeps a null both sides agree on rather than dropping the key", () => {
+    // A present null is a fact — the box was shown and left blank — and is not
+    // the same as the key being absent.
+    const merged = mergeSymptomLogs(
+      [log("2026-08-20", { itch: null })],
+      [log("2026-08-20", { itch: null })],
+    );
+    expect(merged[0].scores).toEqual({ itch: null });
+  });
+
+  it("keeps local's id and phase for the merged day", () => {
+    const merged = mergeSymptomLogs(
+      [{ id: "phone", date: "2026-08-20", phase: "challenge", scores: { itch: 4 } } as any],
+      [{ id: "tablet", date: "2026-08-20", phase: "none", scores: { sleep: 1 } } as any],
+    );
+    expect(merged[0].id).toBe("phone");
+    expect(merged[0].phase).toBe("challenge");
+  });
+
+  it("survives a log whose stored score map is missing", () => {
+    const merged = mergeSymptomLogs(
+      [{ id: "a", date: "2026-08-20" } as any],
+      [log("2026-08-20", { itch: 4 })],
+    );
+    expect(merged[0].scores).toEqual({ itch: 4 });
+  });
+});
+
+describe("isEmptyLedger", () => {
+  it("treats a null ledger as empty", () => {
+    expect(isEmptyLedger(null)).toBe(true);
+  });
+
+  it("calls a ledger with no spans empty, so a first restore can adopt the remote one", () => {
+    expect(isEmptyLedger({ spans: [] })).toBe(true);
+  });
+
+  it("treats a scheduled elimination as real, even before it has stamped a day", () => {
+    expect(isEmptyLedger(scheduleElimination(EMPTY_LEDGER, "2026-12-01", 14, "2026-11-01", "dairy", () => "e1"))).toBe(false);
+  });
+
+  it("treats a ledger with a running elimination span as real", () => {
+    expect(isEmptyLedger(ledgerFrom("2026-08-01"))).toBe(false);
+  });
+
+  it("calls a ledger with any span real, so a backup never replaces it", () => {
+    // The case that matters: startChallenge never touches an `elimination`
+    // field — there is no such field any more — so a user who has only ever
+    // run a Challenge has just this one span. Testing anything narrower than
+    // "any span" here would call their whole phase history empty: pushSnapshot
+    // would never upload it, and mergeSnapshots would replace it with the
+    // remote's.
+    const l = { spans: [{ id: "c1", kind: "challenge", startDate: "2026-03-01", what: "dairy", endedOn: "2026-03-04" }] } as PhaseLedger;
+    expect(isEmptyLedger(l)).toBe(false);
+  });
+
+  it("treats a challenge-only ledger built through startChallenge as real", () => {
+    const challengeOnly = startChallenge(EMPTY_LEDGER, "2026-08-20", "dairy", () => "c1");
+    expect(isEmptyLedger(challengeOnly)).toBe(false);
+  });
+
+  it("treats a finished elimination's history as real", () => {
+    const ended = endEliminationEarly(ledgerFrom("2026-01-01"), "2026-01-05");
+    expect(isEmptyLedger(ended)).toBe(false);
+  });
+});
+
+// ── Firestore transport ─────────────────────────────────────────────────────
+// The real client is replaced by recorders, so the batching and the schema
+// gate are asserted rather than eyeballed. Everything above this line is pure.
+
+vi.mock("./firebase", () => ({ getDb: () => ({ fake: true }) }));
+
+/** One entry per writeBatch(), holding the set() calls made on it. */
+const batches: { path: string; id?: string; data: any }[][] = [];
+/** setDoc() calls, which bypass the batch entirely. */
+const singleWrites: { path: string; data: any }[] = [];
+/** Collection path → the documents pullSnapshot will read back. */
+const remoteCollections: Record<string, { id: string; data: any }[]> = {};
+/** Document path → its data, or absent for a document that does not exist. */
+const remoteDocs: Record<string, any> = {};
+
+vi.mock("firebase/firestore", () => ({
+  doc: (_db: unknown, path: string, id?: string) => ({ path, id }),
+  collection: (_db: unknown, path: string) => ({ path }),
+  writeBatch: () => {
+    const ops: { path: string; id?: string; data: any }[] = [];
+    batches.push(ops);
+    return {
+      set: (ref: { path: string; id?: string }, data: any) => { ops.push({ ...ref, data }); },
+      commit: async () => {},
+    };
+  },
+  setDoc: async (ref: { path: string }, data: any) => { singleWrites.push({ path: ref.path, data }); },
+  getDocs: async (ref: { path: string }) => ({
+    docs: (remoteCollections[ref.path] ?? []).map(d => ({ id: d.id, data: () => d.data })),
+  }),
+  getDoc: async (ref: { path: string }) => ({
+    exists: () => ref.path in remoteDocs,
+    data: () => remoteDocs[ref.path],
+  }),
+}));
+
+beforeEach(() => {
+  batches.length = 0;
+  singleWrites.length = 0;
+  for (const k of Object.keys(remoteCollections)) delete remoteCollections[k];
+  for (const k of Object.keys(remoteDocs)) delete remoteDocs[k];
+});
+
+describe("pushSnapshot", () => {
+  const many = (prefix: string, n: number) =>
+    Array.from({ length: n }, (_, i) => cat(`${prefix}${i}`, `${prefix} ${i}`, { order: i }));
+
+  it("writes every catalog item, to the collection named for its kind", async () => {
+    await pushSnapshot("u1", {
+      ...empty(),
+      bodyLocations: [cat("l1", "Elbow")],
+      cues: [cat("c1", "Stress")],
+      routines: [{ ...cat("r1", "Cold pack"), description: "Hold" }],
+      symptoms: [cat("s1", "Itch")],
+      foodCategories: [cat("Grains", "Grains")],
+      foodTags: [cat("dairy", "Dairy", { icon: "cow" })],
+    });
+    const written = batches.flat().map(o => `${o.path}/${o.id}`);
+    expect(written).toEqual(expect.arrayContaining([
+      "users/u1/bodyLocations/l1", "users/u1/cues/c1",
+      "users/u1/routines/r1", "users/u1/symptoms/s1",
+      "users/u1/foodCategories/Grains", "users/u1/foodTags/dairy",
+    ]));
+  });
+
+  it("writes a food tag's icon, so a restored tag still has its chip", async () => {
+    await pushSnapshot("u1", { ...empty(), foodTags: [cat("dairy", "Dairy", { icon: "cow" })] });
+    const written = batches.flat().find(o => o.id === "dairy");
+    expect(written?.data.icon).toBe("cow");
+  });
+
+  it("chunks under Firestore's 500-operation batch limit with the catalogs included", async () => {
+    const snap: Snapshot = {
+      ...empty(),
+      consumptionLogs: Array.from({ length: 300 }, (_, i) => cLog(`c${i}`)),
+      bodyLocations: many("l", 150),
+      cues: many("c", 150),
+      routines: many("r", 150),
+      symptoms: many("s", 150),
+    };
+    await pushSnapshot("u1", snap);
+    expect(batches.length).toBe(2);
+    for (const b of batches) expect(b.length).toBeLessThanOrEqual(500);
+    expect(batches.flat()).toHaveLength(900);
+  });
+
+  it("writes no phase document when the ledger holds nothing", async () => {
+    // Load-bearing, not an optimisation. `isEmptySnapshot` tests non-array
+    // fields with `!v`, so a truthy-but-empty ledger in the cloud makes a
+    // brand-new account's backup look non-empty. If a push then dies between
+    // this write and the schema stamp below, the next pull skips the
+    // empty-snapshot escape, finds no version, and refuses a perfectly healthy
+    // account as an outdated backup. Never uploading an empty ledger is what
+    // keeps that state unreachable.
+    await pushSnapshot("u1", { ...empty(), ledger: EMPTY_LEDGER });
+    expect(singleWrites.map(w => w.path)).not.toContain("users/u1/meta/phase");
+  });
+
+  it("writes the phase document when the ledger holds a real phase", async () => {
+    await pushSnapshot("u1", { ...empty(), ledger: ledgerFrom("2026-08-01") });
+    const phase = singleWrites.find(w => w.path === "users/u1/meta/phase");
+    expect(phase?.data.ledger).toEqual(ledgerFrom("2026-08-01"));
+  });
+
+  it("stamps the current schema version so a later restore can trust the backup", async () => {
+    await pushSnapshot("u1", empty());
+    const schema = singleWrites.find(w => w.path === "users/u1/meta/schema");
+    expect(schema?.data.version).toBe(SNAPSHOT_SCHEMA_VERSION);
+  });
+});
+
+describe("pullSnapshot — schema gate", () => {
+  const stampSchema = (version: number) => { remoteDocs["users/u1/meta/schema"] = { version }; };
+
+  it("refuses a backup with no schema version, which is pre-v4 by definition", async () => {
+    // Merging one would resurrect exactly the seeded-id history the schema-4
+    // migration was written to discard.
+    remoteCollections["users/u1/consumptionLogs"] = [{ id: "c1", data: { item_id: "APPLE" } }];
+    await expect(pullSnapshot("u1")).rejects.toThrow(OUTDATED_BACKUP_MESSAGE);
+  });
+
+  it("refuses a backup stamped below the current schema version", async () => {
+    stampSchema(SNAPSHOT_SCHEMA_VERSION - 1);
+    remoteCollections["users/u1/consumptionLogs"] = [{ id: "c1", data: { item_id: "APPLE" } }];
+    await expect(pullSnapshot("u1")).rejects.toThrow(OUTDATED_BACKUP_MESSAGE);
+  });
+
+  it("refuses a backup stamped above the current schema version", async () => {
+    // A newer device backed up first. This build's converters would silently
+    // drop whatever fields that version added, and the next push would write
+    // the lossy result back over the cloud copy.
+    stampSchema(SNAPSHOT_SCHEMA_VERSION + 1);
+    remoteCollections["users/u1/consumptionLogs"] = [{ id: "c1", data: { item_id: "APPLE" } }];
+    await expect(pullSnapshot("u1")).rejects.toThrow(NEWER_BACKUP_MESSAGE);
+  });
+
+  it("tells the two refusals apart — one says update this device, the other says replace the backup", () => {
+    expect(NEWER_BACKUP_MESSAGE).not.toBe(OUTDATED_BACKUP_MESSAGE);
+  });
+
+  it("treats a wholly empty remote as nothing to restore, not as an old backup", async () => {
+    // A brand-new account has no meta/schema doc either, so the version alone
+    // cannot tell it apart from a pre-v4 backup. There is nothing to refuse.
+    await expect(pullSnapshot("u1")).resolves.toEqual(emptySnapshot());
+  });
+
+  it("still refuses an unstamped remote that holds only a ledger", async () => {
+    remoteDocs["users/u1/meta/phase"] = { ledger: ledgerFrom("2026-08-01") };
+    await expect(pullSnapshot("u1")).rejects.toThrow(OUTDATED_BACKUP_MESSAGE);
+  });
+
+  it("reads every catalog from a backup at the current version", async () => {
+    stampSchema(SNAPSHOT_SCHEMA_VERSION);
+    remoteCollections["users/u1/bodyLocations"] = [{ id: "l1", data: { name: "Elbow", order: 0, isArchived: false } }];
+    remoteCollections["users/u1/routines"] = [{ id: "r1", data: { name: "Cold pack", order: 0, isArchived: false, description: "Hold" } }];
+    remoteCollections["users/u1/foodCategories"] = [{ id: "Grains", data: { name: "Grains", order: 0, isArchived: false } }];
+    // The icon has to come back too, or a restored tag renders as a bare chip.
+    remoteCollections["users/u1/foodTags"] = [{ id: "dairy", data: { name: "Dairy", order: 0, isArchived: false, icon: "cow" } }];
+    const snap = await pullSnapshot("u1");
+    expect(snap.bodyLocations).toEqual([{ id: "l1", name: "Elbow", order: 0, isArchived: false }]);
+    expect(snap.routines[0].description).toBe("Hold");
+    expect(snap.foodCategories).toEqual([{ id: "Grains", name: "Grains", order: 0, isArchived: false }]);
+    expect(snap.foodTags).toEqual([{ id: "dairy", name: "Dairy", order: 0, isArchived: false, icon: "cow" }]);
+    expect(snap.cues).toEqual([]);
+    expect(snap.symptoms).toEqual([]);
+  });
+});
+
+describe("isOutdatedSnapshot", () => {
+  it("treats a missing version as outdated", () => {
+    expect(isOutdatedSnapshot(null)).toBe(true);
+  });
+
+  it("treats the current version as usable", () => {
+    expect(isOutdatedSnapshot(SNAPSHOT_SCHEMA_VERSION)).toBe(false);
+  });
+
+  it("treats an older version as outdated", () => {
+    expect(isOutdatedSnapshot(SNAPSHOT_SCHEMA_VERSION - 1)).toBe(true);
+  });
+
+  it("does not call a newer version outdated — that is a different refusal", () => {
+    expect(isOutdatedSnapshot(SNAPSHOT_SCHEMA_VERSION + 1)).toBe(false);
+  });
+});
+
+describe("isFutureSnapshot", () => {
+  it("treats a newer version as from the future", () => {
+    expect(isFutureSnapshot(SNAPSHOT_SCHEMA_VERSION + 1)).toBe(true);
+  });
+
+  it("treats the current version as usable", () => {
+    expect(isFutureSnapshot(SNAPSHOT_SCHEMA_VERSION)).toBe(false);
+  });
+
+  it("does not call a missing or older version future", () => {
+    expect(isFutureSnapshot(null)).toBe(false);
+    expect(isFutureSnapshot(SNAPSHOT_SCHEMA_VERSION - 1)).toBe(false);
+  });
+});
+
+describe("isEmptySnapshot", () => {
+  it("calls the empty snapshot empty", () => {
+    expect(isEmptySnapshot(emptySnapshot())).toBe(true);
+  });
+
+  it("calls a single log entry non-empty", () => {
+    expect(isEmptySnapshot({ ...emptySnapshot(), consumptionLogs: [cLog("a")] })).toBe(false);
+  });
+
+  it("calls a single catalog item non-empty", () => {
+    expect(isEmptySnapshot({ ...emptySnapshot(), cues: [cat("c1", "Stress")] })).toBe(false);
+  });
+
+  it("counts a ledger, which is a document rather than a collection", () => {
+    expect(isEmptySnapshot({ ...emptySnapshot(), ledger: ledgerFrom("2026-08-01") })).toBe(false);
+  });
+});

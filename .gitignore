@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# pnpm
+.pnpm-store/
+
+# build output
+dist/
+static-build/
+web-build/
+
+# typescript
+*.tsbuildinfo
+
+# expo
+.expo/
+expo-env.d.ts
+
+# local env files
+.env
+.env*.local
+
+# macOS
+.DS_Store
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*

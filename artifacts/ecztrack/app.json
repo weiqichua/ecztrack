@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Ecztrack",
+    "slug": "ecztrack",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "ecztrack",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#121212"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.berry_delight42.healthtracker",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ecztrack uses your photo library so you can add existing pictures of your skin.",
+          "cameraPermission": "Ecztrack uses the camera so you can photograph your skin."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "owner": "berry_delight42",
+    "extra": {
+      "eas": {
+        "projectId": "4b69a4e7-08e4-4dba-a270-4fd2b456e025"
+      }
+    }
+  }
+}
