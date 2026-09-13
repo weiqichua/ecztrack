@@ -34,7 +34,8 @@
           "photosPermission": "Ecztrack uses your photo library so you can add existing pictures of your skin.",
           "cameraPermission": "Ecztrack uses the camera so you can photograph your skin."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,
