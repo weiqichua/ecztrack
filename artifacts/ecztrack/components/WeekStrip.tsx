@@ -26,10 +26,7 @@ function getMondayOf(dateStr: string): Date {
 
 export default function WeekStrip({ selectedDate, onSelect }: Props) {
   const colors = useColors();
-  // Read every render, not captured once: Expo Router mounts a tab and never
-  // unmounts it, so a strip mounted yesterday must still know what today is.
   const today = todayKey();
-
   const { symptomLogs, consumptionLogs, scratchLogs, ledger } = useAppContext();
 
   const [weekMonday, setWeekMonday] = useState<Date>(() => getMondayOf(selectedDate));
@@ -57,8 +54,6 @@ export default function WeekStrip({ selectedDate, onSelect }: Props) {
     return s;
   }, [scratchLogs]);
 
-  // Same rule the month grid uses: the ledger decides a day's phase, and a
-  // log's stored copy is only a fallback for a day the ledger does not cover.
   function styleFor(dateStr: string) {
     return dayStyle({
       dateKey: dateStr,
@@ -74,10 +69,6 @@ export default function WeekStrip({ selectedDate, onSelect }: Props) {
     const next = new Date(weekMonday);
     next.setDate(next.getDate() + dir * 7);
     setWeekMonday(next);
-    const offset = weekDates.indexOf(selectedDate);
-    const targetDate = new Date(next);
-    targetDate.setDate(targetDate.getDate() + (offset >= 0 ? offset : 0));
-    onSelect(localDateKey(targetDate));
   }
 
   const panResponder = useRef(
@@ -96,59 +87,59 @@ export default function WeekStrip({ selectedDate, onSelect }: Props) {
   ).current;
 
   return (
-    <View style={styles.container} {...panResponder.panHandlers}>
-      <View style={styles.grid}>
-        {weekDates.map((dateStr, i) => {
-          const isSelected = dateStr === selectedDate;
-          const dayNum = new Date(dateStr + "T12:00:00").getDate();
-          const { fill, isToday, isFuture, dots } = styleFor(dateStr);
+    <View style={styles.container}>
+      <TouchableOpacity onPress={() => stepWeek(-1)} style={styles.arrowButton} hitSlop={12}>
+        <MciIcon name="chevron-left" size={24} color={colors.primary} />
+      </TouchableOpacity>
 
-          return (
-            <TouchableOpacity
-              key={dateStr}
-              style={styles.cell}
-              onPress={() => !isFuture && onSelect(dateStr)}
-              disabled={isFuture}
-              activeOpacity={isFuture ? 1 : 0.7}
-            >
-              <Text style={[styles.letterLabel, {
-                color: isSelected ? colors.primary : colors.mutedForeground,
-              }]}>
-                {WEEK_LETTERS[i]}
-              </Text>
-              <View style={[
-                styles.circle,
-                fill ? { backgroundColor: fill } : null,
-                isFuture && styles.circleFuture,
-                // Today and the selected day both get a ring, but not the same
-                // one: with a single colour for both, selecting any other day
-                // left two identical rings on screen and no way to tell which
-                // was which. Today is the quiet landmark, selection is the
-                // emphatic one, and selection is listed last so it wins
-                // outright on the day that is both.
-                isToday && { borderWidth: 2, borderColor: colors.mutedForeground },
-                isSelected && { borderWidth: 2, borderColor: colors.primary },
-              ]}>
-                <Text style={[
-                  styles.dayNum,
-                  { color: isFuture ? colors.mutedForeground : fill ? ON_ACCENT : colors.foreground },
-                ]}>
-                  {dayNum}
+      <View style={styles.gridContainer} {...panResponder.panHandlers}>
+        <View style={styles.grid}>
+          {weekDates.map((dateStr, i) => {
+            const isSelected = dateStr === selectedDate;
+            const dayNum = new Date(dateStr + "T12:00:00").getDate();
+            const { fill, isToday, isFuture, dots } = styleFor(dateStr);
+
+            return (
+              <TouchableOpacity
+                key={dateStr}
+                style={styles.cell}
+                onPress={() => !isFuture && onSelect(dateStr)}
+                disabled={isFuture}
+                activeOpacity={isFuture ? 1 : 0.7}
+              >
+                <Text style={[styles.letterLabel, {
+                  color: isSelected ? colors.primary : colors.mutedForeground,
+                }]}>
+                  {WEEK_LETTERS[i]}
                 </Text>
-              </View>
-              {/* Smaller and tighter than the month grid's: three 5px dots with
-                  3px gaps sit under a 40px cell comfortably and under a 32px
-                  one they crowd the edges. The row keeps its height whether or
-                  not anything is in it, so the strip does not jump. */}
-              <View style={styles.dotRow}>
-                {dots.map(d => (
-                  <View key={d.kind} style={[styles.dot, d.color ? { backgroundColor: d.color } : null]} />
-                ))}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+                <View style={[
+                  styles.circle,
+                  fill ? { backgroundColor: fill } : null,
+                  isFuture && styles.circleFuture,
+                  isToday && { borderWidth: 2, borderColor: colors.mutedForeground },
+                  isSelected && { borderWidth: 2, borderColor: colors.primary },
+                ]}>
+                  <Text style={[
+                    styles.dayNum,
+                    { color: isFuture ? colors.mutedForeground : fill ? ON_ACCENT : colors.foreground },
+                  ]}>
+                    {dayNum}
+                  </Text>
+                </View>
+                <View style={styles.dotRow}>
+                  {dots.map(d => (
+                    <View key={d.kind} style={[styles.dot, d.color ? { backgroundColor: d.color } : null]} />
+                  ))}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
+
+      <TouchableOpacity onPress={() => stepWeek(1)} style={styles.arrowButton} hitSlop={12}>
+        <MciIcon name="chevron-right" size={24} color={colors.primary} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -157,37 +148,51 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  arrowButton: {
     paddingHorizontal: 4,
-    paddingVertical: 6,
+  },
+  gridContainer: {
+    flex: 1,
   },
   grid: {
-    flex: 1,
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-between",
   },
   cell: {
     alignItems: "center",
-    gap: 3,
-    flex: 1,
+    width: 36,
   },
   letterLabel: {
     fontSize: 11,
-    fontFamily: "Inter_500Medium",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
+    fontFamily: "Inter_600SemiBold",
+    marginBottom: 6,
   },
   circle: {
     width: 32,
     height: 32,
     borderRadius: 16,
+    overflow: 'hidden',
     alignItems: "center",
     justifyContent: "center",
   },
-  circleFuture: { opacity: 0.25 },
+  circleFuture: {
+    opacity: 0.25,
+  },
   dayNum: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter_600SemiBold",
   },
-  dotRow: { flexDirection: "row", gap: 2.5, height: 4 },
-  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "transparent" },
+  dotRow: {
+    flexDirection: "row",
+    gap: 3,
+    marginTop: 3,
+    height: 5,
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "transparent",
+  },
 });

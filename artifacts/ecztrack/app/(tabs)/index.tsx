@@ -32,6 +32,7 @@ import ScratchLogEditModal from "@/components/ScratchLogEditModal";
 import SkinPhotoViewer from "@/components/SkinPhotoViewer";
 import ScoreBoxInput from "@/components/ScoreBoxInput";
 import CatalogManagerModal from "@/components/CatalogManagerModal";
+import DaySummary from "@/components/DaySummary";
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -166,23 +167,25 @@ export default function HomeScreen() {
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.stickyTop, { backgroundColor: colors.background, paddingTop: topPad + 8 }]}>
           <View style={styles.titleRow}>
-            <TouchableOpacity
-              style={styles.calendarIconBtn}
-              onPress={() => router.push("/(tabs)/calendar")}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <MciIcon name="calendar-month" size={22} color={colors.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.dateLabelRow} activeOpacity={0.7} onPress={() => router.push("/(tabs)/calendar")}>
-              <Text style={[styles.dateLabel, { color: colors.foreground }]}>
-                {formatHeaderDate(selectedDate)}
-              </Text>
-              <MciIcon name="chevron-down" size={16} color={colors.mutedForeground} />
-            </TouchableOpacity>
+            <View style={styles.leftGroup}>
+              <TouchableOpacity
+                style={styles.calendarIconBtn}
+                onPress={() => router.push("/(tabs)/calendar" as any)}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <MciIcon name="calendar-month" size={22} color={colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.dateLabelRow} activeOpacity={0.7} onPress={() => router.push("/(tabs)/calendar" as any)}>
+                <Text style={[styles.dateLabel, { color: colors.foreground }]} numberOfLines={1}>
+                  {formatHeaderDate(selectedDate)}
+                </Text>
+                <MciIcon name="chevron-down" size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
             <View style={styles.rightGroup}>
               <View style={[styles.phaseBadge, { backgroundColor: phaseColor + "22", borderColor: phaseColor + "44" }]}>
                 <View style={[styles.phaseDot, { backgroundColor: phaseColor }]} />
-                <Text style={[styles.phaseLabel, { color: phaseColor }]}>
+                <Text style={[styles.phaseLabel, { color: phaseColor }]} numberOfLines={3}>
                   {phaseLabelText}
                 </Text>
               </View>
@@ -226,183 +229,11 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Symptoms</Text>
-          <TouchableOpacity onPress={() => setManagingSymptoms(true)}>
-            <Text style={[styles.seeAll, { color: colors.primary }]}>Manage</Text>
-          </TouchableOpacity>
-        </View>
-        {activeSymptoms.length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              No check-in items yet — tap Manage to add one
-            </Text>
-          </View>
-        ) : (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12, paddingRight: 4, gap: 16 }}>
-              <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>Yest</Text>
-              <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>Today</Text>
-              <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>Tmw</Text>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingHorizontal: 4 }}>
-              <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Overall Average</Text>
-              <View style={{ flexDirection: 'row', gap: 16 }}>
-                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, width: 30, textAlign: 'center' }}>{overallAvgYesterday}</Text>
-                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, width: 30, textAlign: 'center' }}>{overallAvgToday}</Text>
-                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, width: 30, textAlign: 'center' }}>{overallAvgTomorrow}</Text>
-              </View>
-            </View>
-            {activeSymptoms.map(symptom => (
-              <View key={symptom.id} style={{ marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, paddingHorizontal: 4 }}>
-                  <Text style={{ fontSize: 13, fontFamily: "Inter_500Medium", color: colors.foreground }}>{symptom.name}</Text>
-                  <View style={{ flexDirection: 'row', gap: 16 }}>
-                    <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>{getSymptomScore(yesterdayDateStr, symptom.id)}</Text>
-                    <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>{getSymptomScore(selectedDate, symptom.id)}</Text>
-                    <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>{getSymptomScore(tomorrowDateStr, symptom.id)}</Text>
-                  </View>
-                </View>
-                <ScoreBoxInput
-                  label=""
-                  value={selectedScores[symptom.id] ?? null}
-                  onChange={value => {
-                  // Any day the strip can reach is editable, today or past.
-                  // Remembering to record a symptom a day or two later is the
-                  // normal case for this app, not an exception, so a past day
-                  // is a day you can still fill in. Future days are unreachable
-                  // — the strip disables them — so there is no guard here.
-                  addSymptomLog({
-                    date: selectedDate,
-                    // Only this one box's value. addSymptomLog merges it over
-                    // whatever that day's log already holds, so every other
-                    // box's score (and any archived symptom's) survives
-                    // untouched. The phase is re-derived from the ledger for
-                    // `date`, so a past day is stamped with the phase it was
-                    // actually on rather than today's.
-                    scores: { [symptom.id]: value },
-                  });
-                }}
-              />
-              </View>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Foods</Text>
-          <TouchableOpacity onPress={() => router.push("/(tabs)/logbook" as any)}>
-            <Text style={[styles.seeAll, { color: colors.primary }]}>Logbook</Text>
-          </TouchableOpacity>
-        </View>
-        {shownMeals.length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <MciIcon name="food-off" size={28} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              {isToday ? "No foods logged today" : "No foods logged this day"}
-            </Text>
-          </View>
-        ) : (
-          <View style={[styles.recentFoods, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {shownMeals.map((meal, idx) => (
-              <View key={meal.groupId}>
-                {idx > 0 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
-                <View style={styles.mealBlock}>
-                  <Text style={[styles.mealTitle, { color: colors.foreground }]} numberOfLines={1}>
-                    {meal.label}
-                    <Text style={[styles.mealTime, { color: colors.mutedForeground }]}>
-                      {"  "}{formatTime(meal.timestamp)}
-                    </Text>
-                  </Text>
-                  {meal.entries.map(entry => {
-                    const food = allFoods.find(f => f.id === entry.item_id);
-                    // An unresolvable food is indeterminate, and the dot has two
-                    // states — it must not borrow the reassuring one.
-                    const unsafe = !food || food.is_elimination_safe === false;
-                    return (
-                      <View key={entry.id} style={styles.mealItemRow}>
-                        <View style={[styles.foodDot, { backgroundColor: unsafe ? colors.destructive : colors.success }]} />
-                        <Text style={[styles.foodName, { color: colors.foreground }]} numberOfLines={1}>
-                          {food?.name ?? "Unknown food"}
-                        </Text>
-                        {unsafe && <MciIcon name="alert-circle" size={14} color={colors.destructive} />}
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            ))}
-            {selectedMeals.length > 4 && (
-              <Text style={[styles.moreText, { color: colors.mutedForeground }]}>
-                +{selectedMeals.length - 4} more
-              </Text>
-            )}
-          </View>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Skin</Text>
-          {canCapture && (
-            <View style={styles.skinHeaderActions}>
-              <TouchableOpacity onPress={() => handleAdd("camera")} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                <MciIcon name="camera-outline" size={20} color={colors.primary} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleAdd("library")} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                <MciIcon name="image-outline" size={20} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-        {selectedPhotos.length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <MciIcon name="image-off-outline" size={28} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              {canCapture
-                ? (isToday ? "No photos today" : "No photos this day")
-                : "Photos are available on the phone app."}
-            </Text>
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.skinStrip}
-            contentContainerStyle={styles.skinStripContent}
-          >
-            {selectedPhotos.slice().reverse().map(photo => {
-              const uri = photoUri(FileSystem.documentDirectory, photo.file);
-              return (
-                <TouchableOpacity
-                  key={photo.id}
-                  style={styles.skinThumbContainer}
-                  onPress={() => setViewingPhotoId(photo.id)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.skinThumb, { borderColor: colors.border }]}>
-                    {uri && <Image source={{ uri }} style={styles.skinThumbImage} />}
-                  </View>
-                  <View style={[styles.skinTimeBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[styles.skinTimeText, { color: colors.mutedForeground }]}>
-                      {formatTime(photo.takenAt)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Daily Notes</Text>
-        </View>
-        <TextInput
-          style={[styles.notesInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
-          placeholder="Jot down anything about today..."
-          placeholderTextColor={colors.mutedForeground}
-          multiline
-          value={noteForDay}
-          onChangeText={(txt) => setDailyNote(selectedDate, txt)}
-          textAlignVertical="top"
+        <DaySummary
+          date={selectedDate}
+          onManageSymptoms={() => setManagingSymptoms(true)}
+          onAddPhoto={handleAdd}
+          onViewPhoto={setViewingPhotoId}
         />
 
         <View style={styles.sectionHeader}>
@@ -429,7 +260,7 @@ export default function HomeScreen() {
           <>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Urges</Text>
-              <TouchableOpacity onPress={() => router.push("/(tabs)/scratch-tracker")}>
+              <TouchableOpacity onPress={() => router.push("/(tabs)/urges" as any)}>
                 <Text style={[styles.seeAll, { color: colors.primary }]}>See All</Text>
               </TouchableOpacity>
             </View>
@@ -506,6 +337,12 @@ const styles = StyleSheet.create({
     zIndex: 10,
     elevation: 10,
   },
+
+  leftGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -524,8 +361,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    flex: 1,
     paddingHorizontal: 10,
+    flexShrink: 1,
   },
   dateLabel: {
     fontSize: 16,

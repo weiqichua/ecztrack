@@ -10,6 +10,9 @@ import {
   Image,
 } from "react-native";
 import { useRouter } from "expo-router";
+import DaySummary from "@/components/DaySummary";
+import SkinPhotoViewer from "@/components/SkinPhotoViewer";
+import { FlatList } from "react-native";
 import { localDateKey, isOnLocalDay } from "@/lib/dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MciIcon from "@/components/MciIcon";
@@ -57,6 +60,7 @@ export default function CalendarScreen() {
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [modalDate, setModalDate] = useState<string | null>(null);
   const [view, setView] = useState<"quick" | "detailed">("quick");
+  const [viewingPhotoId, setViewingPhotoId] = useState<string | null>(null);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 58 : insets.bottom + 50;
@@ -107,7 +111,6 @@ export default function CalendarScreen() {
   }, [scratchLogs]);
 
   function handleDayPress(dateStr: string) {
-    setSelectedDate(dateStr);
     setModalDate(dateStr);
   }
 
@@ -234,11 +237,11 @@ export default function CalendarScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: bottomPad + 16 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {view === "quick" && (
+      {view === "quick" ? (
+        <ScrollView
+          contentContainerStyle={[styles.scroll, { paddingBottom: bottomPad + 16 }]}
+          showsVerticalScrollIndicator={false}
+        >
           <>
             <View style={styles.weekdayRow}>
               {WEEKDAYS.map(d => (
@@ -310,43 +313,24 @@ export default function CalendarScreen() {
               </View>
             </View>
           </>
-        )}
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={rows}
+          keyExtractor={row => row.dateKey}
+          contentContainerStyle={[styles.scroll, { paddingBottom: bottomPad + 16 }]}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item: row }) => (
+            <View style={[styles.detailRowWrapper, row.isFuture && styles.detailRowFuture]}>
+              <Text style={[styles.detailFullDate, row.isFuture && styles.detailFutureText]}>
+                {WEEKDAYS[row.weekday]}, {row.day} {MONTH_NAMES[viewMonth]} {viewYear}
+              </Text>
+              <DaySummary date={row.dateKey} onViewPhoto={setViewingPhotoId} />
+            </View>
+          )}
+        />
+      )}
 
-        {view === "detailed" && (
-          <View style={styles.detailedList}>
-            {rows.map(row => {
-              const uri = row.photo ? photoUri(FileSystem.documentDirectory, row.photo.file) : null;
-              const level = row.average != null ? scoreLevel(row.average) : null;
-              const avgColor = level === "bad" ? colors.destructive : level === "warn" ? colors.warning : level === "good" ? colors.success : colors.mutedForeground;
-              return (
-                <TouchableOpacity
-                  key={row.dateKey}
-                  style={[styles.detailRow, row.isFuture && styles.detailRowFuture]}
-                  disabled={row.isFuture}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    setSelectedDate(row.dateKey);
-                    router.push("/(tabs)");
-                  }}
-                >
-                  <Text style={[styles.detailWeekday, row.isFuture && styles.detailFutureText]}>
-                    {WEEKDAYS[row.weekday]}
-                  </Text>
-                  <Text style={[styles.detailDay, row.isFuture && styles.detailFutureText]}>
-                    {row.day}
-                  </Text>
-                  <Text style={[styles.detailAverage, { color: row.isFuture ? colors.mutedForeground : avgColor }]}>
-                    {row.average != null ? row.average.toFixed(1) : "—"}
-                  </Text>
-                  <View style={styles.detailThumb}>
-                    {uri && <Image source={{ uri }} style={styles.detailThumbImage} />}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
 
       <Modal
         visible={!!modalDate}
@@ -380,97 +364,32 @@ export default function CalendarScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
-
-              {/* Check-ins */}
-              <Text style={styles.modalSectionLabel}>Check-ins</Text>
-              {!modalSymptomLog ? (
-                <View style={styles.emptySection}>
-                  <MciIcon name="calendar-remove" size={22} color={colors.mutedForeground} />
-                  <Text style={styles.emptyText}>No check-ins recorded</Text>
-                </View>
-              ) : (
-                <>
-                  {modalSymptomLog && <CheckinBlock log={modalSymptomLog} label="Check-in" />}
-                </>
-              )}
-
-              {/* Food log */}
-              <Text style={[styles.modalSectionLabel, { marginTop: 12 }]}>Food Log</Text>
-              {modalFoods.length === 0 ? (
-                <View style={styles.emptySection}>
-                  <MciIcon name="food-off" size={22} color={colors.mutedForeground} />
-                  <Text style={styles.emptyText}>No foods logged</Text>
-                </View>
-              ) : (
-                <View style={styles.listCard}>
-                  {modalFoods.map(({ log, food }, idx) => {
-                    const isSafe = food?.is_elimination_safe ?? true;
-                    const dotColor = isSafe ? colors.success : colors.destructive;
-                    return (
-                      <View key={log.id}>
-                        {idx > 0 && <View style={[styles.innerDivider, { backgroundColor: colors.border }]} />}
-                        <View style={styles.listRow}>
-                          <View style={[styles.rowDot, { backgroundColor: dotColor }]} />
-                          <Text style={[styles.rowName, { color: colors.foreground }]} numberOfLines={1}>
-                            {food?.name ?? "Unknown"}
-                          </Text>
-                          {!isSafe && (
-                            <View style={[styles.pill, { backgroundColor: colors.destructive + "22", borderColor: colors.destructive + "55" }]}>
-                              <Text style={[styles.pillText, { color: colors.destructive }]}>Trigger</Text>
-                            </View>
-                          )}
-                          {isSafe && (
-                            <View style={[styles.pill, { backgroundColor: colors.success + "22", borderColor: colors.success + "55" }]}>
-                              <Text style={[styles.pillText, { color: colors.success }]}>Safe</Text>
-                            </View>
-                          )}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-
-              {/* Urge log */}
-              <Text style={[styles.modalSectionLabel, { marginTop: 12 }]}>Urge / Habit Log</Text>
-              {modalUrges.length === 0 ? (
-                <View style={styles.emptySection}>
-                  <MciIcon name="hand-peace" size={22} color={colors.mutedForeground} />
-                  <Text style={styles.emptyText}>No urges tracked</Text>
-                </View>
-              ) : (
-                <View style={styles.listCard}>
-                  {modalUrges.map((log, idx) => {
-                    const routineName = itemName(routines, log.routine_id);
-                    const successColors: Record<number, string> = { 1: colors.destructive, 2: colors.warning, 3: colors.accent, 4: colors.success };
-                    const sColor = successColors[log.success] ?? colors.mutedForeground;
-                    return (
-                      <View key={log.id}>
-                        {idx > 0 && <View style={[styles.innerDivider, { backgroundColor: colors.border }]} />}
-                        <View style={styles.listRow}>
-                          <View style={[styles.rowDot, { backgroundColor: sColor }]} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.rowName, { color: colors.foreground }]}>{itemName(bodyLocations, log.location)}</Text>
-                            {routineName !== "" && (
-                              <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>{routineName}</Text>
-                            )}
-                          </View>
-                          <View style={[styles.pill, { backgroundColor: sColor + "22", borderColor: sColor + "55" }]}>
-                            <Text style={[styles.pillText, { color: sColor }]}>{SUCCESS_LABELS[log.success]}</Text>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-
+              <DaySummary date={modalDate} onViewPhoto={setViewingPhotoId} />
+              
+              <TouchableOpacity 
+                style={[styles.jumpButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setSelectedDate(modalDate);
+                  setModalDate(null);
+                  router.push("/(tabs)");
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.jumpButtonText, { color: colors.primaryForeground }]}>Jump to day</Text>
+              </TouchableOpacity>
               <View style={{ height: 20 }} />
             </ScrollView>
+
           </View>
         )}
       </Modal>
-    </View>
+    
+      <SkinPhotoViewer
+        photo={skinPhotos.find(p => p.id === viewingPhotoId) ?? null}
+        onClose={() => setViewingPhotoId(null)}
+      />
+    
+      </View>
   );
 }
 
@@ -608,5 +527,29 @@ function makeStyles(colors: ColorsType) {
       paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1,
     },
     pillText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
-  });
+  
+    detailRowWrapper: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 24,
+      marginHorizontal: 4,
+    },
+    detailFullDate: {
+      fontSize: 18,
+      fontFamily: "Inter_700Bold",
+      color: colors.foreground,
+      marginBottom: 12,
+    },
+    jumpButton: {
+      padding: 16,
+      borderRadius: 12,
+      alignItems: "center",
+      marginTop: 16,
+    },
+    jumpButtonText: {
+      fontSize: 16,
+      fontFamily: "Inter_600SemiBold",
+    },
+});
 }
