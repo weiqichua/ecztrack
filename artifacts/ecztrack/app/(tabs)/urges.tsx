@@ -35,6 +35,15 @@ function PickerEmpty(
   { text, colors, onManage }: { text: string; colors: Colors; onManage: () => void },
 ) {
   return (
+    <View style={styles.pickerEmpty}>
+      <Text style={[styles.pickerEmptyText, { color: colors.mutedForeground }]}>{text}</Text>
+      <TouchableOpacity style={styles.pickerEmptyBtn} onPress={onManage}>
+        <Text style={[styles.pickerEmptyBtnText, { color: colors.primary }]}>Add some</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function UrgesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -592,6 +601,8 @@ const styles = StyleSheet.create({
 
   // Scratch list
   list: { paddingHorizontal: 16, paddingTop: 4 },
+  listHeader: { paddingBottom: 16 },
+  logList: { paddingHorizontal: 16, paddingBottom: 40, gap: 12 },
   emptyScratch: { alignItems: "center", paddingHorizontal: 32, gap: 8, paddingVertical: 20 },
   emptyTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", marginTop: 4 },
   emptyText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 },
@@ -628,6 +639,8 @@ const styles = StyleSheet.create({
     borderRadius: 14, borderWidth: 1, borderStyle: "dashed", marginBottom: 4,
   },
   pickerEmptyText: { fontSize: 13, fontFamily: "Inter_400Regular" },
+  pickerEmptyBtn: { padding: 4 },
+  pickerEmptyBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   pickerHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 8 },
   chipGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 },
   chip: {

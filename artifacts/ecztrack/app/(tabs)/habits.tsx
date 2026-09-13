@@ -93,8 +93,6 @@ export default function ScratchTrackerScreen() {
 
   const completedCount = activeHabits.filter(h => getHabitValue(h.id) > 0).length;
 
-  const completedCount = activeHabits.filter(h => getHabitValue(h.id) > 0).length;
-
   // ── List header — contains the entire Daily Habits section ────────────────
   function ListHeader() {
     return (
@@ -240,8 +238,6 @@ export default function ScratchTrackerScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-        )}
-
         )}
       </View>
     );

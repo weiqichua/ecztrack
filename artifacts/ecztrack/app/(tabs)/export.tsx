@@ -59,54 +59,12 @@ export default function ExportScreen() {
     consumptionLogs, symptomLogs, scratchLogs, allFoods, habitLogs, habitDefinitions,
     ledger, bodyLocations, cues, routines, symptoms, foodCategories, foodTags,
     supplementLogs, activityLogs, supplements, activities,
-    backupAvailable, backupUser, backupStatus, backupError, lastBackupAt,
-    signIn, signOut, backupNow, restoreFromBackup,
   } = useAppContext();
   const [exporting, setExporting] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const busy = backupStatus === "working";
   // A log whose every score is null records nothing — the user tapped a box and
   // tapped it off again. The symptom CSV omits those rows, so the count beside
   // the button has to omit them too or it promises rows the file will not hold.
   const recordedCheckins = symptomLogs.filter(isRecordedCheckin);
-
-  async function handleSignIn() {
-    try { await signIn(email, password); setPassword(""); } catch { /* surfaced via backupError */ }
-  }
-
-  // Local entry counts, so an obviously-stale device is visible before you push
-  // it over the cloud copy. Backup is the irreversible direction: it overwrites
-  // remote documents by id, and the cloud is the only other copy.
-  const localCount =
-    consumptionLogs.length + symptomLogs.length + scratchLogs.length +
-    habitLogs.length + habitDefinitions.length;
-
-  async function handleBackup() {
-    const ok = await confirmDestructive(
-      "Replace the cloud backup?",
-      `Everything on this device except skin photos (${localCount} entries) will overwrite the cloud copy. ` +
-        `Last backup: ${fmtBackupTime(lastBackupAt)}. If this device is out of date, ` +
-        `restore first instead — this direction cannot be undone.`,
-      "Upload",
-    );
-    if (ok) await backupNow();
-  }
-
-  async function handleRestore() {
-    const ok = await confirmDestructive(
-      "Restore from backup?",
-      "Entries in the backup that are missing here will be added. Nothing on this device is deleted.",
-      "Restore",
-    );
-    if (ok) await restoreFromBackup();
-  }
-
-  function fmtBackupTime(iso: string | null) {
-    if (!iso) return "Never";
-    const d = new Date(iso);
-    return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-  }
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 58 : insets.bottom + 50;
@@ -222,102 +180,7 @@ export default function ExportScreen() {
         showsVerticalScrollIndicator={false}
       >
 
-        {/* Backup — hidden entirely when Firebase is not configured */}
-        {backupAvailable && (
-          <View style={[styles.backupCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.backupHeader}>
-              <MciIcon name="cloud-sync-outline" size={18} color={colors.primary} />
-              <Text style={[styles.backupTitle, { color: colors.foreground }]}>Backup</Text>
-            </View>
 
-            {backupUser ? (
-              <>
-                <Text style={[styles.backupHint, { color: colors.mutedForeground }]}>
-                  Signed in as {backupUser.email ?? backupUser.uid}
-                </Text>
-                <Text style={[styles.backupHint, { color: colors.mutedForeground }]}>
-                  Skin photos are not backed up and stay on this device only.
-                </Text>
-                {/* Both sides, so the direction of each button is a decision
-                    rather than a guess. */}
-                <View style={[styles.backupSides, { borderColor: colors.border }]}>
-                  <View style={styles.backupSide}>
-                    <Text style={[styles.backupSideLabel, { color: colors.mutedForeground }]}>This device</Text>
-                    <Text style={[styles.backupSideValue, { color: colors.foreground }]}>{localCount} entries</Text>
-                  </View>
-                  <MciIcon name="arrow-left-right" size={14} color={colors.mutedForeground} />
-                  <View style={styles.backupSide}>
-                    <Text style={[styles.backupSideLabel, { color: colors.mutedForeground }]}>Cloud</Text>
-                    <Text style={[styles.backupSideValue, { color: colors.foreground }]}>{fmtBackupTime(lastBackupAt)}</Text>
-                  </View>
-                </View>
-                <View style={styles.backupRow}>
-                  <TouchableOpacity
-                    style={[styles.backupBtn, { backgroundColor: colors.primary, opacity: busy ? 0.6 : 1 }]}
-                    onPress={handleBackup}
-                    disabled={busy}
-                    activeOpacity={0.8}
-                  >
-                    {busy ? <ActivityIndicator size="small" color={colors.primaryForeground} />
-                          : <Text style={[styles.backupBtnText, { color: colors.primaryForeground }]}>Upload to cloud</Text>}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.backupBtn, { backgroundColor: colors.muted, opacity: busy ? 0.6 : 1 }]}
-                    onPress={handleRestore}
-                    disabled={busy}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.backupBtnText, { color: colors.mutedForeground }]}>Download</Text>
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity onPress={signOut} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={[styles.backupSignOut, { color: colors.mutedForeground }]}>Sign out</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <Text style={[styles.backupHint, { color: colors.mutedForeground }]}>
-                  Optional. Sign in to keep an off-device copy and pick it up on another phone.
-                  Both directions are manual, and neither one deletes anything.
-                </Text>
-                <TextInput
-                  style={[styles.backupInput, { backgroundColor: colors.surface, color: colors.foreground, borderColor: colors.border }]}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="Email"
-                  placeholderTextColor={colors.mutedForeground}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoComplete="email"
-                />
-                <TextInput
-                  style={[styles.backupInput, { backgroundColor: colors.surface, color: colors.foreground, borderColor: colors.border }]}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Password"
-                  placeholderTextColor={colors.mutedForeground}
-                  secureTextEntry
-                  autoComplete="current-password"
-                />
-                <TouchableOpacity
-                  style={[styles.backupBtn, { backgroundColor: colors.primary, opacity: busy || !email || !password ? 0.6 : 1 }]}
-                  onPress={handleSignIn}
-                  disabled={busy || !email || !password}
-                  activeOpacity={0.8}
-                >
-                  {busy ? <ActivityIndicator size="small" color={colors.primaryForeground} />
-                        : <Text style={[styles.backupBtnText, { color: colors.primaryForeground }]}>Sign in</Text>}
-                </TouchableOpacity>
-              </>
-            )}
-
-            {backupError ? (
-              <Text style={[styles.backupErr, { color: colors.destructive }]} numberOfLines={3}>{backupError}</Text>
-            ) : backupStatus === "success" ? (
-              <Text style={[styles.backupErr, { color: colors.success }]}>Done.</Text>
-            ) : null}
-          </View>
-        )}
 
         {/* Dataset summary */}
         <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -431,29 +294,6 @@ const styles = StyleSheet.create({
   exportTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   exportCount: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
   exportDesc: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
-  backupCard: { borderRadius: 16, borderWidth: 1, padding: 16, gap: 10 },
-  backupHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  backupTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  backupHint: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
-  backupRow: { flexDirection: "row", gap: 8 },
-  backupSides: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, gap: 8,
-  },
-  backupSide: { gap: 2 },
-  backupSideLabel: { fontSize: 10, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.4 },
-  backupSideValue: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  backupBtn: {
-    flex: 1, alignItems: "center", justifyContent: "center",
-    paddingVertical: 12, borderRadius: 12, minHeight: 44,
-  },
-  backupBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  backupInput: {
-    borderRadius: 12, borderWidth: 1, paddingHorizontal: 12,
-    minHeight: 44, fontSize: 14, fontFamily: "Inter_400Regular",
-  },
-  backupSignOut: { fontSize: 12, fontFamily: "Inter_600SemiBold", textAlign: "center", paddingTop: 2 },
-  backupErr: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
   exportBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: 8, paddingVertical: 12, borderRadius: 12, minHeight: 44,

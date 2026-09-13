@@ -23,8 +23,6 @@ import {
   localDateKey,
   msUntilNextLocalMidnight,
 } from "@/lib/dates";
-import { isAuthAvailable, watchAuth, signIn as fbSignIn, signOut as fbSignOut, type AuthUser } from "@/lib/auth";
-import { mergeSnapshots, pushSnapshot, pullSnapshot, type Snapshot } from "@/lib/backup";
 import { notify } from "@/lib/dialogs";
 import { stamp } from "@/lib/recency";
 import {
@@ -116,8 +114,6 @@ function todayStr(): string {
   return todayKey();
 }
 
-export type BackupStatus = "idle" | "working" | "success" | "error";
-
 interface AppContextValue {
   consumptionLogs: ConsumptionLog[];
   supplementLogs: SupplementLog[];
@@ -160,18 +156,6 @@ interface AppContextValue {
   /** Today's local date key, refreshed at midnight and on app foreground. */
   todayDateKey: string;
   isLoaded: boolean;
-
-  // ── Optional off-device backup ──
-  /** False when no Firebase config is present; the whole feature hides. */
-  backupAvailable: boolean;
-  backupUser: AuthUser | null;
-  backupStatus: BackupStatus;
-  backupError: string | null;
-  lastBackupAt: string | null;
-  signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
-  backupNow: () => Promise<void>;
-  restoreFromBackup: () => Promise<void>;
   setSelectedDate: (date: string) => void;
   addConsumptionLog: (itemId: string, opts?: { isAccident?: boolean; timestamp?: string }) => Promise<void>;
   /**
@@ -342,13 +326,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // counter and — worst — the date that habit ticks were written under all
   // still said yesterday.
   const [todayDateKey, setTodayDateKey] = useState<string>(todayStr());
-
-  // ── Optional off-device backup ──
-  const [backupUser, setBackupUser] = useState<AuthUser | null>(null);
-  const [backupStatus, setBackupStatus] = useState<BackupStatus>("idle");
-  const [backupError, setBackupError] = useState<string | null>(null);
-  const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
-  const backupAvailable = isAuthAvailable();
 
   // ── Day rollover ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -945,162 +922,6 @@ const setDailyNote = useCallback(async (date: string, text: string) => {
     return consumptionLogs.filter(l => new Date(l.timestamp) >= cutoff);
   }, [consumptionLogs]);
 
-
-  // ── Backup ────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    // Stored via persist(), which JSON.stringifies — but a device may still
-    // carry an older raw ISO string written before this went through the
-    // gate, so tolerate both shapes rather than breaking existing installs.
-    AsyncStorage.getItem(STORAGE_KEYS.LAST_BACKUP_AT).then(v => {
-      if (!v) { setLastBackupAt(null); return; }
-      try { setLastBackupAt(JSON.parse(v)); } catch { setLastBackupAt(v); }
-    }).catch(() => {});
-    return watchAuth(setBackupUser);
-  }, []);
-
-  // Read straight from state; this is only ever called from a user action, so
-  // the closure is current by construction.
-  const snapshot = useCallback((): Snapshot => ({
-    consumptionLogs, supplementLogs, activityLogs, symptomLogs, scratchLogs, customFoods,
-    habitDefinitions, habitLogs,
-    bodyLocations, cues, routines, symptoms,
-    foodCategories, foodTags, supplements, activities, presetGroups, dailyNotes,
-    ledger,
-  }), [
-    consumptionLogs, supplementLogs, activityLogs, symptomLogs, scratchLogs, customFoods, habitDefinitions, habitLogs,
-    bodyLocations, cues, routines, symptoms, foodCategories, foodTags, supplements, activities, presetGroups, dailyNotes, ledger,
-  ]);
-
-  const signIn = useCallback(async (email: string, password: string) => {
-    setBackupError(null);
-    setBackupStatus("working");
-    try {
-      const user = await fbSignIn(email, password);
-      setBackupUser(user);
-      setBackupStatus("idle");
-    } catch (e: any) {
-      setBackupError(e?.message ?? String(e));
-      setBackupStatus("error");
-      throw e;
-    }
-  }, []);
-
-  const signOut = useCallback(async () => {
-    // Signing out locally must succeed even if the network call fails, or the
-    // UI is stuck showing an account the user asked to leave.
-    try { await fbSignOut(); } catch { /* ignore */ }
-    setBackupUser(null);
-    setBackupStatus("idle");
-    setBackupError(null);
-  }, []);
-
-  const backupNow = useCallback(async () => {
-    if (!backupUser) return;
-    setBackupError(null);
-    setBackupStatus("working");
-    try {
-      await pushSnapshot(backupUser.uid, snapshot());
-      const at = new Date().toISOString();
-      setLastBackupAt(at);
-      const saved = await persist(STORAGE_KEYS.LAST_BACKUP_AT, at);
-      if (!saved) {
-        // The backup itself already landed on the server; only the local
-        // "last backup at" timestamp failed to write. Say exactly that,
-        // rather than implying the backup failed.
-        setBackupError(
-          "Backed up successfully, but this device could not record when — " +
-            "it's likely low on storage. Free up space; the backup itself is fine.",
-        );
-        setBackupStatus("error");
-        return;
-      }
-      setBackupStatus("success");
-    } catch (e: any) {
-      setBackupError(e?.message ?? String(e));
-      setBackupStatus("error");
-    }
-  }, [backupUser, snapshot]);
-
-  const restoreFromBackup = useCallback(async () => {
-    if (!backupUser) return;
-    if (!loadGate.canWrite()) {
-      // The initial load never succeeded, so `snapshot()` here would be built
-      // entirely from empty defaults. Merging that with the remote copy and
-      // writing the result — or even just setting it into React state, with
-      // the disk write silently dropped by persist() — would show data on
-      // screen that vanishes on the next launch. Refuse outright instead.
-      const message =
-        "Your data could not be loaded when the app started, so restoring now " +
-        "would overwrite it with a merge built on empty local data. Restart " +
-        "the app and try again.";
-      setBackupError(message);
-      setBackupStatus("error");
-      notify("Restore blocked", message);
-      return;
-    }
-    setBackupError(null);
-    setBackupStatus("working");
-    try {
-      const remote = await pullSnapshot(backupUser.uid);
-      const merged = mergeSnapshots(snapshot(), remote);
-      setConsumptionLogs(merged.consumptionLogs);
-      symptomLogCell.set(merged.symptomLogs);
-      setScratchLogs(merged.scratchLogs);
-      setCustomFoods(merged.customFoods);
-      setHabitDefinitions(merged.habitDefinitions);
-      habitLogCell.set(merged.habitLogs);
-      setBodyLocations(merged.bodyLocations);
-      setCues(merged.cues);
-      setRoutines(merged.routines);
-      setSymptoms(merged.symptoms);
-      setFoodCategories(merged.foodCategories);
-      setFoodTags(merged.foodTags);
-      // Through readLedger like the disk path, not straight in: the cloud copy
-      // can be older than this device's code. A backup taken before spans holds
-      // `{ days, elimination, materialisedThrough }`, and restoring that
-      // unchecked puts a ledger with no `spans` array into state, where the
-      // next span lookup throws on `.find`.
-      if (merged.ledger) setLedgerState(readLedger(merged.ledger));
-
-      // Named so a partial failure can say which collections did not
-      // persist, not just that something did not.
-      const writes: [string, Promise<boolean>][] = [
-        ["food log", persist(STORAGE_KEYS.CONSUMPTION_LOGS, merged.consumptionLogs)],
-        ["symptom log", persist(STORAGE_KEYS.SYMPTOM_LOGS, merged.symptomLogs)],
-        ["scratch log", persist(STORAGE_KEYS.SCRATCH_LOGS, merged.scratchLogs)],
-        ["custom foods", persist(STORAGE_KEYS.CUSTOM_FOODS, merged.customFoods)],
-        ["habits", persist(STORAGE_KEYS.HABIT_DEFINITIONS, merged.habitDefinitions)],
-        ["habit logs", persist(STORAGE_KEYS.HABIT_LOGS, merged.habitLogs)],
-        ["body locations", persist(STORAGE_KEYS.BODY_LOCATIONS, merged.bodyLocations)],
-        ["urge cues", persist(STORAGE_KEYS.CUES, merged.cues)],
-        ["competing routines", persist(STORAGE_KEYS.ROUTINES, merged.routines)],
-        ["symptoms", persist(STORAGE_KEYS.SYMPTOMS, merged.symptoms)],
-        ["food categories", persist(STORAGE_KEYS.FOOD_CATEGORIES, merged.foodCategories)],
-        ["food tags", persist(STORAGE_KEYS.FOOD_TAGS, merged.foodTags)],
-        ...(merged.ledger
-          ? ([["phase ledger", persist(STORAGE_KEYS.PHASE_LEDGER, merged.ledger)]] as [string, Promise<boolean>][])
-          : []),
-      ];
-      const results = await Promise.all(writes.map(([, p]) => p));
-      const failed = writes.filter((_, i) => !results[i]).map(([label]) => label);
-      if (failed.length > 0) {
-        // State above is already the merged data — it is genuinely on
-        // screen. Only the disk copy is short some collections, so say
-        // that, not that the restore failed outright.
-        setBackupError(
-          `Restored data is on screen, but ${failed.join(", ")} did not save to this ` +
-            "device — it's likely low on storage. Free up space and restore again.",
-        );
-        setBackupStatus("error");
-        return;
-      }
-      setBackupStatus("success");
-    } catch (e: any) {
-      setBackupError(e?.message ?? String(e));
-      setBackupStatus("error");
-    }
-  }, [backupUser, snapshot]);
-
   return (
     <AppContext.Provider value={{
       consumptionLogs, supplementLogs, activityLogs, supplements, activities, presetGroups, symptomLogs, scratchLogs, customFoods, allFoods,
@@ -1121,8 +942,6 @@ const setDailyNote = useCallback(async (date: string, text: string) => {
       setDailyNote,
       setHabitLog, getHabitLogsForDate,
       addSkinPhoto, deleteSkinPhoto, setPhotoLocation, setPhotoTime,
-      backupAvailable, backupUser, backupStatus, backupError, lastBackupAt,
-      signIn, signOut, backupNow, restoreFromBackup,
     }}>
       {children}
     </AppContext.Provider>
