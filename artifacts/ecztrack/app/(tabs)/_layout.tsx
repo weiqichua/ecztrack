@@ -62,9 +62,27 @@ export default function TabLayout() {
         options={{ href: null }}
       />
       <Tabs.Screen
-        name="scratch-tracker"
+        name="logbook"
+        options={{
+          title: "Logbook",
+          tabBarIcon: ({ color }) => (
+            <MciIcon name="book-open-outline" size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="habits"
         options={{
           title: "Habits",
+          tabBarIcon: ({ color }) => (
+            <MciIcon name="checkbox-marked-outline" size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="urges"
+        options={{
+          title: "Urges",
           tabBarIcon: ({ color }) => (
             <MciIcon name="hand-peace" size={22} color={color} />
           ),

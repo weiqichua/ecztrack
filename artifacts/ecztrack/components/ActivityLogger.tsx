@@ -127,7 +127,7 @@ export default function ActivityLogger() {
       </View>
 
       {/* Recent Logs */}
-      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, flex: 1 }]}>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 12 }]}>Today's Activities</Text>
         {todayLogs.length === 0 ? (
           <Text style={{ color: colors.mutedForeground }}>No activities logged for {dateStr}.</Text>

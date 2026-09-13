@@ -213,6 +213,23 @@ export function startChallenge(
   };
 }
 
+/** Updates an existing phase */
+export function updatePhase(
+  ledger: PhaseLedger, phaseId: string, what: string, plannedDays?: number
+): PhaseLedger {
+  const label = what.trim();
+  if (!label) throw new Error("Say what you are eliminating or challenging.");
+  return {
+    spans: ledger.spans.map(s => {
+      if (s.id !== phaseId) return s;
+      if (s.kind === "elimination") {
+         return { ...s, what: label, plannedDays: plannedDays ?? s.plannedDays };
+      }
+      return { ...s, what: label };
+    })
+  };
+}
+
 /**
  * Shared by both end paths: a span cancelled before it began leaves no trace.
  *

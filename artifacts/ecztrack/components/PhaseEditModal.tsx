@@ -1,14 +1,16 @@
 import React, { useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Modal, ScrollView, Platform,
+  Modal, ScrollView, Platform, TextInput
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MciIcon from "@/components/MciIcon";
 import { useColors } from "@/hooks/useColors";
 import { useAppContext } from "@/context/AppContext";
 import { phaseStatus } from "@/lib/phaseLabels";
-import { confirmDestructive } from "@/lib/dialogs";
+import { openSpan, spanOnDate } from "@/lib/phases";
+import { confirmDestructive, notify } from "@/lib/dialogs";
+import { ON_ACCENT } from "@/constants/colors";
 
 interface Props {
   visible: boolean;
@@ -46,10 +48,40 @@ export default function PhaseEditModal({ visible, onClose }: Props) {
     ? "Nothing has been logged against it yet, so it will be removed entirely."
     : `Today stays a ${noun} day; from tomorrow you're on no phase.`;
 
+  const [what, setWhat] = React.useState("");
+  const [duration, setDuration] = React.useState(14);
+
+  const span = React.useMemo(() => {
+    return spanOnDate(ledger, todayDateKey, todayDateKey) || openSpan(ledger, todayDateKey);
+  }, [ledger, todayDateKey]);
+
+  React.useEffect(() => {
+    if (visible && span) {
+      setWhat(span.what);
+      if (span.kind === "elimination") {
+        setDuration(span.plannedDays);
+      }
+    }
+  }, [visible, span]);
+
   // A ref, not a state: a state update only lands on the next render, so two
   // taps inside one frame would both read `false` and both fire. Ending an
   // elimination cannot be undone, so the window is worth closing properly.
   const ending = useRef(false);
+  const { updatePhase } = useAppContext();
+
+  async function handleUpdate() {
+    if (!span || ending.current) return;
+    ending.current = true;
+    try {
+      await updatePhase(span.id, what, span.kind === "elimination" ? duration : undefined);
+      onClose();
+    } catch (e: any) {
+      notify("Couldn't update phase", e?.message ?? String(e));
+    } finally {
+      ending.current = false;
+    }
+  }
 
   async function handleAbort() {
     if (ending.current) return;
@@ -88,6 +120,51 @@ export default function PhaseEditModal({ visible, onClose }: Props) {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false}>
+          {span && (
+            <View style={[styles.editSection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Edit {Noun}</Text>
+              
+              <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 12 }]}>
+                What are you {isChallenge ? "challenging" : "eliminating"}?
+              </Text>
+              <TextInput
+                value={what}
+                onChangeText={setWhat}
+                style={[styles.input, { color: colors.foreground, backgroundColor: colors.background, borderColor: colors.border }]}
+                returnKeyType="done"
+              />
+
+              {span.kind === "elimination" && (
+                <>
+                  <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 16 }]}>Duration (days)</Text>
+                  <View style={styles.durationRow}>
+                    <TouchableOpacity
+                      style={[styles.durationBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                      onPress={() => setDuration(d => Math.max(1, d - 1))}
+                    >
+                      <MciIcon name="minus" size={18} color={colors.foreground} />
+                    </TouchableOpacity>
+                    <Text style={[styles.durationText, { color: colors.foreground }]}>{duration}</Text>
+                    <TouchableOpacity
+                      style={[styles.durationBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                      onPress={() => setDuration(d => Math.min(90, d + 1))}
+                    >
+                      <MciIcon name="plus" size={18} color={colors.foreground} />
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: colors.primary, marginTop: 16, opacity: what.trim() ? 1 : 0.4 }]}
+                onPress={handleUpdate}
+                disabled={!what.trim()}
+              >
+                <Text style={[styles.saveBtnText, { color: ON_ACCENT }]}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={[styles.abortHeader, { backgroundColor: colors.destructive + "18", borderColor: colors.destructive + "55" }]}>
             <MciIcon name="alert" size={22} color={colors.destructive} />
             <View style={{ flex: 1 }}>
@@ -167,5 +244,24 @@ function makeStyles(colors: ReturnType<typeof import("@/hooks/useColors").useCol
       paddingVertical: 10, marginBottom: 8,
     },
     backBtnText: { fontSize: 14, fontFamily: "Inter_400Regular" },
+    editSection: {
+      padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 20,
+    },
+    sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
+    label: { fontSize: 12, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
+    input: {
+      borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12,
+      fontSize: 15, fontFamily: "Inter_400Regular",
+    },
+    durationRow: { flexDirection: "row", alignItems: "center", gap: 16 },
+    durationBtn: {
+      width: 44, height: 44, borderRadius: 12, borderWidth: 1,
+      alignItems: "center", justifyContent: "center",
+    },
+    durationText: { fontSize: 24, fontFamily: "Inter_700Bold", minWidth: 40, textAlign: "center" },
+    saveBtn: {
+      paddingVertical: 14, borderRadius: 12, alignItems: "center", justifyContent: "center",
+    },
+    saveBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   });
 }

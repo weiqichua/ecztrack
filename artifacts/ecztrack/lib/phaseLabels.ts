@@ -21,11 +21,12 @@ import type { PhaseLedger } from "@/constants/types";
 export type PhaseStatus =
   /** Nothing running and nothing scheduled — a state, not a missing value. */
   | { kind: "none" }
-  | { kind: "scheduled"; startDate: string; what: string; daysAway: number; label: string }
+  | { kind: "scheduled"; id: string; startDate: string; what: string; daysAway: number; label: string }
   /** Today is one of the elimination's days. */
   | {
       kind: "running";
       phase: "elimination";
+      id: string;
       startDate: string;
       what: string;
       /** Where it stopped, or the final day of the plan while it is on. */
@@ -42,6 +43,7 @@ export type PhaseStatus =
   | {
       kind: "running";
       phase: "challenge";
+      id: string;
       startDate: string;
       what: string;
       dayNumber: number;
@@ -87,6 +89,7 @@ export function phaseStatus(ledger: PhaseLedger, todayKey: string): PhaseStatus 
       return {
         kind: "running",
         phase: "challenge",
+        id: span.id,
         startDate: span.startDate,
         what: span.what,
         dayNumber,
@@ -109,6 +112,7 @@ export function phaseStatus(ledger: PhaseLedger, todayKey: string): PhaseStatus 
     return {
       kind: "running",
       phase: "elimination",
+      id: span.id,
       startDate: span.startDate,
       what: span.what,
       lastDay,
@@ -129,7 +133,7 @@ export function phaseStatus(ledger: PhaseLedger, todayKey: string): PhaseStatus 
   const open = openSpan(ledger, todayKey);
   if (open && todayKey < open.startDate) {
     const daysAway = daysBetweenKeys(todayKey, open.startDate);
-    return { kind: "scheduled", startDate: open.startDate, what: open.what, daysAway, label: startsInLabel(daysAway, open.what) };
+    return { kind: "scheduled", id: open.id, startDate: open.startDate, what: open.what, daysAway, label: startsInLabel(daysAway, open.what) };
   }
 
   return { kind: "none" };

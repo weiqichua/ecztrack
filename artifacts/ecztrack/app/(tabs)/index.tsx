@@ -137,15 +137,34 @@ export default function HomeScreen() {
       : `Elimination: ${selectedDateSpan.what}`;
   }
 
+  function getAveragesFor(dateStr: string) {
+    const log = symptomLogs.find(l => l.date === dateStr);
+    if (!log) return null;
+    const values = Object.values(log.scores).filter(v => v !== null && v !== undefined) as number[];
+    if (values.length === 0) return null;
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    return avg.toFixed(1);
+  }
+
+  const dDate = new Date(selectedDate + "T12:00:00");
+  dDate.setDate(dDate.getDate() - 1);
+  const yesterdayDateStr = dDate.toISOString().split("T")[0];
+  dDate.setDate(dDate.getDate() + 2);
+  const tomorrowDateStr = dDate.toISOString().split("T")[0];
+
+  const overallAvgYesterday = getAveragesFor(yesterdayDateStr) ?? "-";
+  const overallAvgToday = getAveragesFor(selectedDate) ?? "-";
+  const overallAvgTomorrow = getAveragesFor(tomorrowDateStr) ?? "-";
+
+  function getSymptomScore(dateStr: string, symptomId: string) {
+    const log = symptomLogs.find(l => l.date === dateStr);
+    if (!log || log.scores[symptomId] == null) return "-";
+    return String(log.scores[symptomId]);
+  }
+
   return (
-    <>
-      <ScrollView
-        style={[styles.screen, { backgroundColor: colors.background }]}
-        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
-        showsVerticalScrollIndicator={false}
-        stickyHeaderIndices={[0]}
-      >
-        <View style={[styles.stickyTop, { backgroundColor: colors.background, paddingTop: topPad + 8 }]}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <View style={[styles.stickyTop, { backgroundColor: colors.background, paddingTop: topPad + 8 }]}>
           <View style={styles.titleRow}>
             <TouchableOpacity
               style={styles.calendarIconBtn}
@@ -163,7 +182,7 @@ export default function HomeScreen() {
             <View style={styles.rightGroup}>
               <View style={[styles.phaseBadge, { backgroundColor: phaseColor + "22", borderColor: phaseColor + "44" }]}>
                 <View style={[styles.phaseDot, { backgroundColor: phaseColor }]} />
-                <Text style={[styles.phaseLabel, { color: phaseColor }]} numberOfLines={1}>
+                <Text style={[styles.phaseLabel, { color: phaseColor }]}>
                   {phaseLabelText}
                 </Text>
               </View>
@@ -171,6 +190,12 @@ export default function HomeScreen() {
           </View>
           <WeekStrip selectedDate={selectedDate} onSelect={setSelectedDate} />
         </View>
+
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+        showsVerticalScrollIndicator={false}
+      >
 
         <View style={styles.statsGrid}>
           <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -215,12 +240,33 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12, paddingRight: 4, gap: 16 }}>
+              <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>Yest</Text>
+              <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>Today</Text>
+              <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>Tmw</Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingHorizontal: 4 }}>
+              <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Overall Average</Text>
+              <View style={{ flexDirection: 'row', gap: 16 }}>
+                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, width: 30, textAlign: 'center' }}>{overallAvgYesterday}</Text>
+                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, width: 30, textAlign: 'center' }}>{overallAvgToday}</Text>
+                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, width: 30, textAlign: 'center' }}>{overallAvgTomorrow}</Text>
+              </View>
+            </View>
             {activeSymptoms.map(symptom => (
-              <ScoreBoxInput
-                key={symptom.id}
-                label={symptom.name}
-                value={selectedScores[symptom.id] ?? null}
-                onChange={value => {
+              <View key={symptom.id} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, paddingHorizontal: 4 }}>
+                  <Text style={{ fontSize: 13, fontFamily: "Inter_500Medium", color: colors.foreground }}>{symptom.name}</Text>
+                  <View style={{ flexDirection: 'row', gap: 16 }}>
+                    <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>{getSymptomScore(yesterdayDateStr, symptom.id)}</Text>
+                    <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>{getSymptomScore(selectedDate, symptom.id)}</Text>
+                    <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, width: 30, textAlign: 'center' }}>{getSymptomScore(tomorrowDateStr, symptom.id)}</Text>
+                  </View>
+                </View>
+                <ScoreBoxInput
+                  label=""
+                  value={selectedScores[symptom.id] ?? null}
+                  onChange={value => {
                   // Any day the strip can reach is editable, today or past.
                   // Remembering to record a symptom a day or two later is the
                   // normal case for this app, not an exception, so a past day
@@ -238,17 +284,16 @@ export default function HomeScreen() {
                   });
                 }}
               />
+              </View>
             ))}
           </View>
         )}
 
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Foods</Text>
-          {isToday && (
-            <TouchableOpacity onPress={() => router.push("/(tabs)/logbook" as any)}>
-              <Text style={[styles.seeAll, { color: colors.primary }]}>Logbook</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity onPress={() => router.push("/(tabs)/logbook" as any)}>
+            <Text style={[styles.seeAll, { color: colors.primary }]}>Logbook</Text>
+          </TouchableOpacity>
         </View>
         {shownMeals.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -267,7 +312,6 @@ export default function HomeScreen() {
                     {meal.label}
                     <Text style={[styles.mealTime, { color: colors.mutedForeground }]}>
                       {"  "}{formatTime(meal.timestamp)}
-                      {meal.hasAccident ? " · \u26A0 Accident" : ""}
                     </Text>
                   </Text>
                   {meal.entries.map(entry => {
@@ -440,9 +484,6 @@ export default function HomeScreen() {
         photo={viewingPhoto}
         onClose={() => setViewingPhotoId(null)}
       />
-      {/* Mounted here rather than inside the section so it is a sibling of the
-          ScrollView — a Modal nested inside scrolling content misbehaves on
-          web, the same reason scratch-tracker.tsx hoists its manager. */}
       <CatalogManagerModal
         visible={managingSymptoms}
         kind="symptom"
@@ -450,15 +491,16 @@ export default function HomeScreen() {
       />
       <PhaseStartModal visible={showStartModal} onClose={() => setShowStartModal(false)} />
       <PhaseEditModal visible={showEditModal} onClose={() => setShowEditModal(false)} />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  scrollContainer: { flex: 1 },
   content: { paddingHorizontal: 16 },
   stickyTop: {
-    marginHorizontal: -16,
+    marginHorizontal: 0,
     paddingHorizontal: 16,
     paddingBottom: 8,
     zIndex: 10,
@@ -494,6 +536,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1,
     flexShrink: 1,
+    maxWidth: '50%',
   },
   phaseDot: { width: 8, height: 8, borderRadius: 4 },
   phaseLabel: { fontSize: 12, fontFamily: "Inter_600SemiBold", flexShrink: 1 },

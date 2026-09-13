@@ -15,6 +15,7 @@ import {
   endEliminationEarly as endEliminationEarlyIn,
   startChallenge as startChallengeIn,
   endChallenge as endChallengeIn,
+  updatePhase as updatePhaseIn,
 } from "@/lib/phases";
 import { FoodItem, SEED_FOOD_CATEGORIES, SEED_FOOD_TAGS } from "@/constants/foods";
 import {
@@ -223,6 +224,7 @@ interface AppContextValue {
    */
   startChallenge: (what: string) => Promise<void>;
   endChallenge: () => Promise<void>;
+  updatePhase: (phaseId: string, what: string, plannedDays?: number) => Promise<void>;
   getRecentConsumptionLogs: (days?: number) => ConsumptionLog[];
   addCustomFood: (food: Omit<FoodItem, "id" | "is_custom">) => Promise<void>;
   saveFood: (food: FoodItem) => Promise<void>;
@@ -556,6 +558,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (next === ledger) return;
     await persistLedger(next);
   }, [ledger, todayDateKey]);
+
+  const updatePhase = useCallback(async (phaseId: string, what: string, plannedDays?: number) => {
+    await persistLedger(updatePhaseIn(ledger, phaseId, what, plannedDays));
+  }, [ledger]);
 
   // ── Pending delete helper ─────────────────────────────────────────────────
 
@@ -1106,7 +1112,7 @@ const setDailyNote = useCallback(async (date: string, text: string) => {
       updateMeal, deleteMeal,
       addSymptomLog, deleteSymptomLog,
       addScratchLog, updateScratchLog, deleteScratchLog,
-      scheduleElimination, endEliminationEarly, startChallenge, endChallenge,
+      scheduleElimination, endEliminationEarly, startChallenge, endChallenge, updatePhase,
       getRecentConsumptionLogs,
       addCustomFood, saveFood, deleteCustomFood,
       addCatalogItem, updateCatalogItem, deleteCatalogItem, reorderCatalogItems,

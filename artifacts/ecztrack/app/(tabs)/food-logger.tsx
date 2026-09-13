@@ -112,7 +112,7 @@ export default function FoodLoggerScreen({ isEmbedded }: { isEmbedded?: boolean 
     setLogTimestamp(getDefaultTimestamp());
   }, [selectedDate, getDefaultTimestamp]);
 
-  const [isAccident, setIsAccident] = useState(false);
+
 
   const todayLogs = useMemo(
     () => consumptionLogs.filter(l => isOnLocalDay(l.timestamp, selectedDate)),
@@ -198,7 +198,7 @@ export default function FoodLoggerScreen({ isEmbedded }: { isEmbedded?: boolean 
       const timestamp = timestampOverridden.current ? logTimestamp : getDefaultTimestamp();
       // One call for the whole selection: a per-food loop would have each
       // write overwrite the last, saving only the food tapped most recently.
-      await addConsumptionLogs(selectedIds, { isAccident, timestamp, portions, label: draftMealName || undefined });
+      await addConsumptionLogs(selectedIds, { timestamp, portions, label: draftMealName || undefined });
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       setSelectedIds([]);
       setPortions({});
@@ -261,7 +261,6 @@ export default function FoodLoggerScreen({ isEmbedded }: { isEmbedded?: boolean 
             </View>
             <Text style={[styles.logMeta, { color: colors.mutedForeground }]}>
               {formatTime(entry.timestamp)}
-              {entry.is_accident ? " · ⚠ Accident" : ""}
             </Text>
           </View>
           <TouchableOpacity
@@ -305,21 +304,9 @@ export default function FoodLoggerScreen({ isEmbedded }: { isEmbedded?: boolean 
         </View>
       </View>
 
-      {/* Retrospective + Accident flags */}
+      {/* Retrospective */}
       <View style={[styles.logOptionsBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <TimestampPicker value={logTimestamp} onChange={handleTimestampChange} label="Log for" />
-        <View style={styles.accidentRow}>
-          <MciIcon name="alert-circle-outline" size={14} color={isAccident ? colors.destructive : colors.mutedForeground} />
-          <Text style={[styles.accidentLabel, { color: isAccident ? colors.destructive : colors.mutedForeground }]}>
-            Accidental exposure
-          </Text>
-          <Switch
-            value={isAccident}
-            onValueChange={setIsAccident}
-            trackColor={{ false: colors.border, true: colors.destructive + "88" }}
-            thumbColor={isAccident ? colors.destructive : colors.mutedForeground}
-          />
-        </View>
       </View>
 
       {/* Today's log (collapsible), one row per meal */}
@@ -370,7 +357,6 @@ export default function FoodLoggerScreen({ isEmbedded }: { isEmbedded?: boolean 
                     </Text>
                     <Text style={[styles.logMeta, { color: colors.mutedForeground }]} numberOfLines={2}>
                       {formatTime(group.timestamp)} · {names}
-                      {group.hasAccident ? " · ⚠ Accident" : ""}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -662,10 +648,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 16, marginBottom: 10,
     padding: 14, borderRadius: 14, borderWidth: 1,
   },
-  accidentRow: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-  },
-  accidentLabel: { flex: 1, fontSize: 13, fontFamily: "Inter_500Medium" },
   todaySection: {
     marginHorizontal: 16, marginBottom: 12,
     borderRadius: 14, borderWidth: 1, overflow: "hidden",

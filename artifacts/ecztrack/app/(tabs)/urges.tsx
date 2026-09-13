@@ -35,24 +35,11 @@ function PickerEmpty(
   { text, colors, onManage }: { text: string; colors: Colors; onManage: () => void },
 ) {
   return (
-    <TouchableOpacity
-      style={[styles.pickerEmpty, { borderColor: colors.border }]}
-      onPress={onManage}
-      activeOpacity={0.7}
-    >
-      <MciIcon name="plus" size={16} color={colors.mutedForeground} />
-      <Text style={[styles.pickerEmptyText, { color: colors.mutedForeground }]}>{text}</Text>
-    </TouchableOpacity>
-  );
-}
-
-export default function ScratchTrackerScreen() {
+export default function UrgesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
     scratchLogs, addScratchLog, deleteScratchLog,
-    habitDefinitions, setHabitLog, getHabitLogsForDate,
-    selectedDate, setSelectedDate,
     bodyLocations, cues, routines,
   } = useAppContext();
 
@@ -63,37 +50,6 @@ export default function ScratchTrackerScreen() {
   const activeRoutines = useMemo(() => activeItems(routines), [routines]);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-
-  // ── Daily Habits state ────────────────────────────────────────────────────
-  const [habitModal, setHabitModal] = useState<{ visible: boolean; habit: HabitDefinition | null }>({
-    visible: false,
-    habit: null,
-  });
-  const activeHabits = useMemo(() => activeItems(habitDefinitions), [habitDefinitions]);
-  const logsForDate = useMemo(() => getHabitLogsForDate(selectedDate), [selectedDate, getHabitLogsForDate]);
-
-  function getHabitValue(habitId: string): number {
-    return logsForDate.find(l => l.habitId === habitId)?.value ?? 0;
-  }
-
-  // The next value is derived inside the mutator, not here. `getHabitValue`
-  // reads React state, which is a render out of date the moment a tap lands, so
-  // two quick taps on one tile both computed from the same pre-tap number and
-  // the second wrote what the first already had — +1 for two taps. Handing over
-  // the arithmetic lets it resolve against the newest array.
-  // Haptics stay fire-and-forget: awaiting them yields, which is what made the
-  // stale read easy to hit in the first place.
-  async function handleCheckToggle(habitId: string) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    await setHabitLog(habitId, selectedDate, current => (current > 0 ? 0 : 1));
-  }
-
-  async function handleCountChange(habitId: string, delta: number) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    await setHabitLog(habitId, selectedDate, current => Math.max(0, current + delta));
-  }
-
-  const completedCount = activeHabits.filter(h => getHabitValue(h.id) > 0).length;
 
   // ── Scratch Urge state ────────────────────────────────────────────────────
   const [showScratchModal, setShowScratchModal] = useState(false);
@@ -213,156 +169,10 @@ export default function ScratchTrackerScreen() {
   // window freezes at whenever the app was opened.
   const visibleLogs = filterByRecency(scratchLogs, range, Date.now());
 
-  // ── List header — contains the entire Daily Habits section ────────────────
+  // ── List header — contains the Urges header and stats ────────────────
   function ListHeader() {
     return (
-      <View>
-        {/* ── Daily Habits ─────────────────────────────────────────── */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Daily Habits</Text>
-          <TouchableOpacity
-            style={[styles.addBtn, { backgroundColor: colors.primary }]}
-            onPress={() => setHabitModal({ visible: true, habit: null })}
-            activeOpacity={0.8}
-            hitSlop={{ top: 3, bottom: 3, left: 3, right: 3 }}
-          >
-            <MciIcon name="plus" size={20} color={colors.primaryForeground} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.weekStripWrap, { borderBottomColor: colors.border }]}>
-          <WeekStrip selectedDate={selectedDate} onSelect={setSelectedDate} />
-        </View>
-
-        {activeHabits.length === 0 ? (
-          <View style={[styles.emptyHabits, { borderColor: colors.border }]}>
-            <MciIcon name="checkbox-marked-outline" size={36} color={colors.mutedForeground} />
-            <Text style={[styles.emptyHabitsText, { color: colors.mutedForeground }]}>
-              No habits yet — tap + to add your first
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.habitsCard}>
-            {activeHabits.length > 0 && (
-              <View style={styles.habitsSummaryRow}>
-                <Text style={[styles.habitsSummaryText, { color: colors.mutedForeground }]}>
-                  {completedCount} / {activeHabits.length} completed
-                </Text>
-                <View style={[styles.progressBarBg, { backgroundColor: colors.border }]}>
-                  <View
-                    style={[
-                      styles.progressBarFill,
-                      {
-                        backgroundColor: completedCount === activeHabits.length ? colors.success : colors.primary,
-                        width: `${activeHabits.length > 0 ? (completedCount / activeHabits.length) * 100 : 0}%`,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-            )}
-
-            {activeHabits.map(habit => {
-              const value = getHabitValue(habit.id);
-              const isDone = value > 0;
-              const goal = habit.goal ?? 1;
-              const progress = habit.unit === "count" ? Math.min(1, value / goal) : isDone ? 1 : 0;
-
-              return (
-                <TouchableOpacity
-                  key={habit.id}
-                  style={[
-                    styles.habitRow,
-                    {
-                      backgroundColor: colors.card,
-                      borderColor: isDone ? colors.primary + "55" : colors.border,
-                    },
-                  ]}
-                  onPress={() => habit.unit === "check" && handleCheckToggle(habit.id)}
-                  onLongPress={() => setHabitModal({ visible: true, habit })}
-                  activeOpacity={habit.unit === "check" ? 0.7 : 1}
-                >
-                  {/* Icon */}
-                  <View style={[
-                    styles.habitIcon,
-                    { backgroundColor: isDone ? colors.primary + "22" : colors.muted },
-                  ]}>
-                    <MciIcon
-                      name={habit.icon as any}
-                      size={20}
-                      color={isDone ? colors.primary : colors.mutedForeground}
-                    />
-                  </View>
-
-                  {/* Name + count progress */}
-                  <View style={styles.habitMid}>
-                    <Text style={[styles.habitName, { color: colors.foreground }]}>{habit.name}</Text>
-                    {habit.unit === "count" && (
-                      <View style={styles.countProgressRow}>
-                        <View style={[styles.countProgressBg, { backgroundColor: colors.border }]}>
-                          <View style={[
-                            styles.countProgressFill,
-                            {
-                              width: `${progress * 100}%`,
-                              backgroundColor: progress >= 1 ? colors.success : colors.primary,
-                            },
-                          ]} />
-                        </View>
-                        <Text style={[styles.countGoalText, { color: colors.mutedForeground }]}>
-                          {value}/{goal}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Right control */}
-                  {habit.unit === "check" ? (
-                    <MciIcon
-                      name={isDone ? "check-circle" : "checkbox-blank-circle-outline"}
-                      size={26}
-                      color={isDone ? colors.success : colors.border}
-                    />
-                  ) : (
-                    <View style={styles.countControls}>
-                      <TouchableOpacity
-                        style={[styles.countBtn, { borderColor: colors.border }]}
-                        onPress={() => handleCountChange(habit.id, -1)}
-                        activeOpacity={0.7}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                      >
-                        <MciIcon name="minus" size={16} color={colors.foreground} />
-                      </TouchableOpacity>
-                      <Text style={[styles.countValue, { color: colors.foreground }]}>{value}</Text>
-                      <TouchableOpacity
-                        style={[styles.countBtn, { borderColor: colors.border, backgroundColor: colors.primary + "22" }]}
-                        onPress={() => handleCountChange(habit.id, 1)}
-                        activeOpacity={0.7}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                      >
-                        <MciIcon name="plus" size={16} color={colors.primary} />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-
-            <TouchableOpacity
-              style={styles.manageRow}
-              onPress={() => setHabitModal({ visible: true, habit: null })}
-              activeOpacity={0.7}
-            >
-              <MciIcon name="pencil-outline" size={14} color={colors.mutedForeground} />
-              <Text style={[styles.manageText, { color: colors.mutedForeground }]}>
-                Long-press any habit to edit · tap + to add new
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* ── Divider ───────────────────────────────────────────────── */}
-        <View style={[styles.divider, { borderColor: colors.border }]} />
-
+      <View style={styles.listHeader}>
         {/* ── Habit Reversal header ─────────────────────────────────── */}
         <View style={[styles.sectionHeader, { marginTop: 4 }]}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Urges Tracked</Text>
@@ -431,7 +241,7 @@ export default function ScratchTrackerScreen() {
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       {/* Screen-level header with safe-area padding */}
       <View style={[styles.screenHeader, { paddingTop: topPad + 28, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}>
-        <Text style={[styles.screenTitle, { color: colors.foreground }]}>Habits</Text>
+        <Text style={[styles.screenTitle, { color: colors.foreground }]}>Urges</Text>
       </View>
       <FlatList
         data={visibleLogs}
@@ -481,13 +291,6 @@ export default function ScratchTrackerScreen() {
         visible={editingScratch !== null}
         log={editingScratch}
         onClose={() => setEditingScratch(null)}
-      />
-
-      {/* ── Habit Edit Modal ───────────────────────────────────────────── */}
-      <HabitEditModal
-        visible={habitModal.visible}
-        habit={habitModal.habit}
-        onClose={() => setHabitModal({ visible: false, habit: null })}
       />
 
       {/* ── Scratch Urge Log Modal ────────────────────────────────────── */}

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { todayKey, localDateKey } from "@/lib/dates";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, PanResponder } from "react-native";
 import MciIcon from "@/components/MciIcon";
 import { useColors } from "@/hooks/useColors";
 import { useAppContext } from "@/context/AppContext";
@@ -80,12 +80,23 @@ export default function WeekStrip({ selectedDate, onSelect }: Props) {
     onSelect(localDateKey(targetDate));
   }
 
-  return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={() => stepWeek(-1)} style={styles.chevron} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <MciIcon name="chevron-left" size={22} color={colors.mutedForeground} />
-      </TouchableOpacity>
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 10;
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        if (gestureState.dx > 50) {
+          stepWeek(-1); // Swipe right -> previous week
+        } else if (gestureState.dx < -50) {
+          stepWeek(1); // Swipe left -> next week
+        }
+      },
+    })
+  ).current;
 
+  return (
+    <View style={styles.container} {...panResponder.panHandlers}>
       <View style={styles.grid}>
         {weekDates.map((dateStr, i) => {
           const isSelected = dateStr === selectedDate;
@@ -138,10 +149,6 @@ export default function WeekStrip({ selectedDate, onSelect }: Props) {
           );
         })}
       </View>
-
-      <TouchableOpacity onPress={() => stepWeek(1)} style={styles.chevron} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <MciIcon name="chevron-right" size={22} color={colors.mutedForeground} />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -152,9 +159,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 4,
     paddingVertical: 6,
-  },
-  chevron: {
-    padding: 4,
   },
   grid: {
     flex: 1,

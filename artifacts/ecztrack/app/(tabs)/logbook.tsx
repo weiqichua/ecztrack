@@ -12,8 +12,27 @@ import { useAppContext } from "@/context/AppContext";
 export default function LogbookHubScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { selectedDate, setSelectedDate } = useAppContext();
+  const { selectedDate, setSelectedDate, symptomLogs } = useAppContext();
   const [activeTab, setActiveTab] = useState<"food" | "supplements" | "activities">("food");
+
+  function getAveragesFor(dateStr: string) {
+    const log = symptomLogs.find(l => l.date === dateStr);
+    if (!log) return null;
+    const values = Object.values(log.scores).filter(v => v !== null && v !== undefined) as number[];
+    if (values.length === 0) return null;
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    return avg.toFixed(1);
+  }
+
+  const dDate = new Date(selectedDate + "T12:00:00");
+  dDate.setDate(dDate.getDate() - 1);
+  const yesterdayDateStr = dDate.toISOString().split("T")[0];
+  dDate.setDate(dDate.getDate() + 2);
+  const tomorrowDateStr = dDate.toISOString().split("T")[0];
+
+  const overallAvgYesterday = getAveragesFor(yesterdayDateStr) ?? "-";
+  const overallAvgToday = getAveragesFor(selectedDate) ?? "-";
+  const overallAvgTomorrow = getAveragesFor(tomorrowDateStr) ?? "-";
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -24,6 +43,21 @@ export default function LogbookHubScreen() {
         
         <View style={{ marginBottom: 16, marginHorizontal: -16 }}>
           <WeekStrip selectedDate={selectedDate} onSelect={setSelectedDate} />
+        </View>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.background, borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, marginBottom: 4 }}>Yesterday</Text>
+            <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>{overallAvgYesterday}</Text>
+          </View>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, marginBottom: 4 }}>Today</Text>
+            <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>{overallAvgToday}</Text>
+          </View>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, marginBottom: 4 }}>Tomorrow</Text>
+            <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>{overallAvgTomorrow}</Text>
+          </View>
         </View>
         
         {/* Segmented Control */}
