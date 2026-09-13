@@ -182,6 +182,7 @@ export default function HomeScreen() {
                 <MciIcon name="chevron-down" size={16} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
+            <View style={{ flex: 1 }} />
             <View style={styles.rightGroup}>
               <View style={[styles.phaseBadge, { backgroundColor: phaseColor + "22", borderColor: phaseColor + "44" }]}>
                 <View style={[styles.phaseDot, { backgroundColor: phaseColor }]} />
@@ -341,7 +342,7 @@ const styles = StyleSheet.create({
   leftGroup: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
+    flexShrink: 0,
   },
   titleRow: {
     flexDirection: "row",
@@ -352,7 +353,11 @@ const styles = StyleSheet.create({
   rightGroup: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "flex-end",
     gap: 6,
+    flexShrink: 1,
+    maxWidth: "50%",
+      maxWidth: "50%",
   },
   calendarIconBtn: {
     padding: 4,
@@ -373,10 +378,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1,
     flexShrink: 1,
-    maxWidth: '50%',
   },
   phaseDot: { width: 8, height: 8, borderRadius: 4 },
-  phaseLabel: { fontSize: 12, fontFamily: "Inter_600SemiBold", flexShrink: 1 },
+  phaseLabel: { fontSize: 12, fontFamily: "Inter_600SemiBold", flexShrink: 1, textAlign: "right" },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 22, marginTop: 10 },
   statTile: {
     width: "47%", padding: 16, borderRadius: 16,
