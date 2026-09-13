@@ -110,6 +110,8 @@ print("urges:          ", len(raw.get("urge_logs", [])))
 print("phase spans:    ", len(raw.get("phase_ledger", {}).get("spans", [])))
 print("symptoms:       ", [s["name"] for s in raw.get("symptoms", [])])
 print("food tags:      ", [t["name"] for t in raw.get("food_tags", [])])
+print("supplements:    ", [s["name"] for s in raw.get("supplements", [])])
+print("activities:     ", [a["name"] for a in raw.get("activities", [])])
 ```
 
 Two things to check in that output. `symptom_scale` should say
@@ -142,6 +144,8 @@ Take **Full Dataset — JSON** from the Export tab. It is built by `buildJSON` i
   "routines":        [ { …, "description" } ],
   "food_categories": [ … ],
   "food_tags":       [ { …, "icon" } ],
+  "supplements":     [ { "id","name","isArchived" } ],
+  "activities":      [ { "id","name","isArchived" } ],
 
   "consumption_logs":[ { "id","timestamp","date","item_id","phase",
                          "is_accident",
@@ -151,6 +155,8 @@ Take **Full Dataset — JSON** from the Export tab. It is built by `buildJSON` i
                          "food": { "id","name","category","tags":{ "<tagId>": 0|1 },
                                    "tag_intensity":{ "<tagId>": 1|2|3 },  // key may be ABSENT; pruned to carried tags
                                    "is_elimination_safe","isArchived" } | null } ],
+  "supplement_logs": [ { "id","timestamp","date","item_id","phase" } ],
+  "activity_logs":   [ { "id","timestamp","date","item_id","phase","intensity" } ],
   "symptom_logs":     [ { "id","date","phase","scores": { "<symptomId>": 1-5 | null } } ],
   "urge_logs":        [ { "id","timestamp","date","phase","location","cue",
                           "routine_id","success":1-4,"is_accident" } ],
@@ -305,7 +311,7 @@ def load_export(path):
     names    = lambda key: {i["id"]: i["name"] for i in raw.get(key, [])}
     catalogs = {k: names(k) for k in
                 ("symptoms", "body_locations", "cues", "routines",
-                 "food_categories", "food_tags")}
+                 "food_categories", "food_tags", "supplements", "activities")}
 
     cons = pd.DataFrame(raw.get("consumption_logs", []))
     if not cons.empty:
@@ -344,12 +350,22 @@ def load_export(path):
     if not urge.empty:
         urge["date"] = pd.to_datetime(urge["date"])
 
+    supp = pd.DataFrame(raw.get("supplement_logs", []))
+    if not supp.empty:
+        supp["date"] = pd.to_datetime(supp["date"])
+        supp["name"] = supp["item_id"].map(catalogs.get("supplements", {}))
+
+    act = pd.DataFrame(raw.get("activity_logs", []))
+    if not act.empty:
+        act["date"] = pd.to_datetime(act["date"])
+        act["name"] = act["item_id"].map(catalogs.get("activities", {}))
+
     hlog = pd.DataFrame(raw.get("habit_logs", []))
     if not hlog.empty:
         hlog["date"] = pd.to_datetime(hlog["date"])
     hdef = {h["id"]: h for h in raw.get("habit_definitions", [])}
 
-    return dict(raw=raw, cons=cons, sym=sym, urge=urge, hlog=hlog, hdef=hdef,
+    return dict(raw=raw, cons=cons, sym=sym, urge=urge, supp=supp, act=act, hlog=hlog, hdef=hdef,
                 ledger=raw.get("phase_ledger") or {"spans": []},
                 tag_ids=tag_ids, catalogs=catalogs,
                 # "Today" for clamping open spans is the day the file was written,
