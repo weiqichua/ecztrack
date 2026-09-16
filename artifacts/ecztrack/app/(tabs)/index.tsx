@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
   historicalPhaseNote: { fontSize: 12, fontFamily: "Inter_400Regular" },
   backToToday: {
     position: "absolute",
-    bottom: Platform.OS === "web" ? 100 : 80,
+    bottom: Platform.OS === "web" ? 100 : 110,
     alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",

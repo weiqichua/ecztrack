@@ -169,8 +169,10 @@ interface AppContextValue {
     portions?: Record<string, Portion>;
     label?: string;
   }) => Promise<void>;
+  addSupplementLogs: (itemIds: string[], opts?: { timestamp?: string }) => Promise<void>;
   addSupplementLog: (itemId: string, opts?: { timestamp?: string }) => Promise<void>;
   deleteSupplementLog: (id: string) => Promise<void>;
+  addActivityLogs: (itemIds: string[], intensity: ActivityIntensity, opts?: { timestamp?: string }) => Promise<void>;
   addActivityLog: (itemId: string, intensity: ActivityIntensity, opts?: { timestamp?: string }) => Promise<void>;
   deleteActivityLog: (id: string) => Promise<void>;
   deleteConsumptionLog: (id: string) => Promise<void>;
@@ -579,14 +581,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [addConsumptionLogs]);
 
 
-  const addSupplementLog = useCallback(async (itemId: string, opts?: { timestamp?: string }) => {
+  const addSupplementLogs = useCallback(async (
+    itemIds: string[],
+    opts?: { timestamp?: string }
+  ) => {
+    if (itemIds.length === 0) return;
     const timestamp = opts?.timestamp || new Date().toISOString();
     const phase = phaseOnDate(ledger, localDateKey(timestamp), todayDateKey);
-    const newLog: SupplementLog = { id: generateId(), timestamp, item_id: itemId, phase };
-    const next = [...supplementLogs, newLog].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const newLogs: SupplementLog[] = itemIds.map(item_id => ({
+      id: generateId(),
+      timestamp,
+      item_id,
+      phase,
+    }));
+    const next = [...supplementLogs, ...newLogs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     setSupplementLogs(next);
     await persist(STORAGE_KEYS.SUPPLEMENT_LOGS, next);
   }, [ledger, todayDateKey, supplementLogs]);
+
+  const addSupplementLog = useCallback(async (itemId: string, opts?: { timestamp?: string }) => {
+    await addSupplementLogs([itemId], opts);
+  }, [addSupplementLogs]);
 
   const deleteSupplementLog = useCallback(async (id: string) => {
     const next = supplementLogs.filter(l => l.id !== id);
@@ -594,14 +609,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await persist(STORAGE_KEYS.SUPPLEMENT_LOGS, next);
   }, [supplementLogs]);
 
-  const addActivityLog = useCallback(async (itemId: string, intensity: ActivityIntensity, opts?: { timestamp?: string }) => {
+  const addActivityLogs = useCallback(async (
+    itemIds: string[],
+    intensity: ActivityIntensity,
+    opts?: { timestamp?: string }
+  ) => {
+    if (itemIds.length === 0) return;
     const timestamp = opts?.timestamp || new Date().toISOString();
     const phase = phaseOnDate(ledger, localDateKey(timestamp), todayDateKey);
-    const newLog: ActivityLog = { id: generateId(), timestamp, item_id: itemId, phase, intensity };
-    const next = [...activityLogs, newLog].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const newLogs: ActivityLog[] = itemIds.map(item_id => ({
+      id: generateId(),
+      timestamp,
+      item_id,
+      phase,
+      intensity,
+    }));
+    const next = [...activityLogs, ...newLogs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     setActivityLogs(next);
     await persist(STORAGE_KEYS.ACTIVITY_LOGS, next);
   }, [ledger, todayDateKey, activityLogs]);
+
+  const addActivityLog = useCallback(async (itemId: string, intensity: ActivityIntensity, opts?: { timestamp?: string }) => {
+    await addActivityLogs([itemId], intensity, opts);
+  }, [addActivityLogs]);
 
   const deleteActivityLog = useCallback(async (id: string) => {
     const next = activityLogs.filter(l => l.id !== id);
@@ -929,7 +959,7 @@ const setDailyNote = useCallback(async (date: string, text: string) => {
       bodyLocations, cues, routines, symptoms, foodCategories, foodTags,
       ledger, activePhase, currentPhase, selectedDate, todayDateKey, isLoaded,
       setSelectedDate,
-      addConsumptionLog, addConsumptionLogs, deleteConsumptionLog, addSupplementLog, deleteSupplementLog, addActivityLog, deleteActivityLog,
+      addConsumptionLog, addConsumptionLogs, deleteConsumptionLog, addSupplementLog, addSupplementLogs, deleteSupplementLog, addActivityLog, addActivityLogs, deleteActivityLog,
       updateMeal, deleteMeal,
       addSymptomLog, deleteSymptomLog,
       addScratchLog, updateScratchLog, deleteScratchLog,

@@ -54,11 +54,9 @@ export default function SupplementLogger() {
 
   const handleLog = async () => {
     if (selectedItemIds.length === 0) return;
-    for (const id of selectedItemIds) {
-      await addSupplementLog(id, {
-        timestamp: time.toISOString(),
-      });
-    }
+    await addSupplementLogs(selectedItemIds, {
+      timestamp: time.toISOString(),
+    });
     setSelectedItemIds([]);
     setTime(getDefaultTime());
   };
@@ -98,7 +96,9 @@ export default function SupplementLogger() {
               </TouchableOpacity>
             ))}
           </View>
-        )}\n\n        <View style={styles.chipRow}>
+        )}
+
+        <View style={styles.chipRow}>
           {allActive.map(item => {
             const isSel = selectedItemIds.includes(item.id);
             return (
@@ -134,7 +134,7 @@ export default function SupplementLogger() {
       </View>
 
       {/* Recent Logs */}
-      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.section, { flex: 1, backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 12 }]}>Today's Supplements</Text>
         {todayLogs.length === 0 ? (
           <Text style={{ color: colors.mutedForeground }}>No supplements logged for {dateStr}.</Text>

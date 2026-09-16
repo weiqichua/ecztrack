@@ -18,6 +18,8 @@ interface Props {
 }
 
 import TimestampPicker from "@/components/TimestampPicker";
+import PickerHeader from "@/components/PickerHeader";
+import CatalogManagerModal from "@/components/CatalogManagerModal";
 
 /**
  * Full-screen viewer for one skin photo: the image, when it was taken, a
@@ -32,7 +34,16 @@ export default function SkinPhotoViewer({ photo, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const { bodyLocations, deleteSkinPhoto, setPhotoLocation, setPhotoTime } = useAppContext();
 
-  const activeLocations = activeItems(bodyLocations);
+  const activeLocations = React.useMemo(() => activeItems(bodyLocations), [bodyLocations]);
+
+  const [managerOpen, setManagerOpen] = React.useState(false);
+
+  // A local uri that `Image` can display across OSs. Doing this on every
+  // render was lagging Android significantly when dragging the sheet down.
+  const uri = React.useMemo(
+    () => (photo ? photoUri(FileSystem.documentDirectory, photo.file) : null),
+    [photo?.file],
+  );
 
   async function handleDelete() {
     if (!photo) return;
@@ -44,8 +55,6 @@ export default function SkinPhotoViewer({ photo, onClose }: Props) {
     await deleteSkinPhoto(photo.id);
     onClose();
   }
-
-  const uri = photo ? photoUri(FileSystem.documentDirectory, photo.file) : null;
 
   return (
     <Modal
@@ -76,7 +85,13 @@ export default function SkinPhotoViewer({ photo, onClose }: Props) {
                   label="Taken at"
                 />
 
-                <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Body Location</Text>
+                <PickerHeader
+                  label="Body Location"
+                  colors={colors}
+                  onManage={() => setManagerOpen(true)}
+                  style={styles.pickerHeader}
+                  labelStyle={styles.sectionLabel}
+                />
                 <View style={styles.chipGrid}>
                   <TouchableOpacity
                     style={[styles.chip, {
@@ -123,6 +138,12 @@ export default function SkinPhotoViewer({ photo, onClose }: Props) {
             </ScrollView>
           </>
         )}
+        
+        <CatalogManagerModal
+          visible={managerOpen}
+          onClose={() => setManagerOpen(false)}
+          kind="bodyLocation"
+        />
       </View>
     </Modal>
   );
@@ -148,7 +169,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 8,
   },
-  chipGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chipGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  pickerHeader: {
+    marginTop: 18,
+    marginBottom: 0,
+  },
   chip: {
     flexDirection: "row",
     alignItems: "center",

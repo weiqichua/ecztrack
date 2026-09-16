@@ -26,7 +26,7 @@ export default function ActivityLogger() {
   const [managerOpen, setManagerOpen] = useState(false);
 
   // For logging
-  const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
+
   const getDefaultTime = React.useCallback(() => {
     if (selectedDate === todayKey()) return new Date();
     const d = new Date();
@@ -40,6 +40,7 @@ export default function ActivityLogger() {
   React.useEffect(() => {
     setTime(getDefaultTime());
   }, [getDefaultTime]);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [intensity, setIntensity] = useState<"light" | "moderate" | "vigorous">("moderate");
 
   const todayLogs = useMemo(() => {
@@ -50,11 +51,11 @@ export default function ActivityLogger() {
   const allActive = useMemo(() => activeItems(activities), [activities]);
 
   const handleLog = async () => {
-    if (!selectedItem) return;
-    await addActivityLog(selectedItem.id, intensity, {
+    if (selectedItemIds.length === 0) return;
+    await addActivityLogs(selectedItemIds, intensity, {
       timestamp: time.toISOString(),
     });
-    setSelectedItem(null);
+    setSelectedItemIds([]);
     setTime(getDefaultTime());
     setIntensity("moderate");
   };
@@ -78,12 +79,12 @@ export default function ActivityLogger() {
 
         <View style={styles.chipRow}>
           {allActive.map(item => {
-            const isSel = selectedItem?.id === item.id;
+            const isSel = selectedItemIds.includes(item.id);
             return (
               <TouchableOpacity
                 key={item.id}
                 style={[styles.chip, { backgroundColor: isSel ? colors.primary : colors.background, borderColor: colors.border }]}
-                onPress={() => setSelectedItem(isSel ? null : item)}
+                onPress={() => setSelectedItemIds(prev => isSel ? prev.filter(x => x !== item.id) : [...prev, item.id])}
               >
                 <Text style={{ color: isSel ? "#fff" : colors.foreground }}>{item.name}</Text>
               </TouchableOpacity>
@@ -94,7 +95,7 @@ export default function ActivityLogger() {
           )}
         </View>
 
-        {selectedItem && (
+        {selectedItemIds.length > 0 && (
           <View style={styles.logForm}>
             <View style={styles.formRow}>
               <Text style={{ color: colors.foreground }}>Intensity:</Text>
@@ -120,14 +121,14 @@ export default function ActivityLogger() {
             </View>
 
             <TouchableOpacity style={[styles.logButton, { backgroundColor: colors.primary }]} onPress={handleLog}>
-              <Text style={{ color: "#fff", fontWeight: "600" }}>Log Activity</Text>
+              <Text style={{ color: "#fff", fontWeight: "600" }}>Log Activity(s)</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
 
       {/* Recent Logs */}
-      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.section, { flex: 1, backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 12 }]}>Today's Activities</Text>
         {todayLogs.length === 0 ? (
           <Text style={{ color: colors.mutedForeground }}>No activities logged for {dateStr}.</Text>

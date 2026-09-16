@@ -245,10 +245,12 @@ export function updatePhase(
 function closeOpenSpan(ledger: PhaseLedger, todayKey: string, kind: PhaseSpan["kind"]): PhaseLedger {
   const open = openSpan(ledger, todayKey);
   if (!open || open.kind !== kind) return ledger;
-  if (todayKey < open.startDate) {
+  
+  const yesterdayKey = addDaysToKey(todayKey, -1);
+  if (yesterdayKey < open.startDate) {
     return { spans: ledger.spans.filter(s => s.id !== open.id) };
   }
-  return { spans: ledger.spans.map(s => (s.id === open.id ? { ...s, endedOn: todayKey } : s)) };
+  return { spans: ledger.spans.map(s => (s.id === open.id ? { ...s, endedOn: yesterdayKey } : s)) };
 }
 
 /** Ends the running elimination, today being its last day — rule 5. */
